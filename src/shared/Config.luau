@@ -44,6 +44,23 @@ Config.RarityColors = {
 	Mythic = Color3.fromRGB(255, 70, 160),
 }
 
+-- Presentation only (no economy effect): how big a brainrot model is built
+-- and how large its floating label is, per rarity. Rarer = bigger spectacle.
+Config.RarityScale = {
+	Common = 1,
+	Rare = 1.1,
+	Epic = 1.22,
+	Legendary = 1.4,
+	Mythic = 1.6,
+}
+Config.RarityLabelMul = {
+	Common = 1,
+	Rare = 1.08,
+	Epic = 1.18,
+	Legendary = 1.32,
+	Mythic = 1.5,
+}
+
 -- Mutations: rolled when a brainrot spawns on the conveyor ------------------
 Config.Mutations = {
 	Gold = { incomeMul = 5, costMul = 2, color = Color3.fromRGB(255, 205, 50) },

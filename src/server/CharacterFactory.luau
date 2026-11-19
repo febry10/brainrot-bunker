@@ -171,12 +171,41 @@ function CharacterFactory.Build(entry, mutation)
 		propBuilder(model, { body = bodyColor, head = headColor, accent = accentColor })
 	end
 
-	-- Floating label: name (rarity color), then "RARITY - $X/s".
+	-- Spawn spectacle: Epic and rarer brainrots carry a permanent pillar of
+	-- light and sparkles, so a screenshot anywhere catches the drama; mutated
+	-- ones sparkle too, and Rainbow ones glow with a real point light.
+	local rarityRank = { Common = 1, Rare = 2, Epic = 3, Legendary = 4, Mythic = 5 }
+	if rarityRank[entry.rarity] >= 3 then
+		local beam = makePart("SpawnBeam", Vector3.new(1.4, 30, 1.4), CFrame.new(0, 15, 0), rarityColor, Enum.Material.Neon)
+		beam.Transparency = 0.6
+		beam.CanQuery = false
+		beam.Parent = model
+		local sparkles = Instance.new("Sparkles")
+		sparkles.SparkleColor = rarityColor
+		sparkles.Parent = body
+	end
+	if mutation ~= "None" then
+		local sparkles = Instance.new("Sparkles")
+		sparkles.SparkleColor = Config.Mutations[mutation].color
+		sparkles.Parent = body
+	end
+	if mutation == "Rainbow" then
+		local light = Instance.new("PointLight")
+		light.Color = Color3.fromRGB(255, 90, 200)
+		light.Range = 14
+		light.Brightness = 2
+		light.Parent = head
+	end
+
+	-- Floating label: name (rarity color), then "RARITY - $X/s". Bigger for
+	-- rarer brainrots, and readable from further away.
+	local labelMul = Config.RarityLabelMul[entry.rarity] or 1
+	local scale = Config.RarityScale[entry.rarity] or 1
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "Label"
-	billboard.Size = UDim2.fromOffset(230, 64)
-	billboard.StudsOffset = Vector3.new(0, 2.6, 0)
-	billboard.MaxDistance = 90
+	billboard.Size = UDim2.fromOffset(math.floor(230 * labelMul), math.floor(64 * labelMul))
+	billboard.StudsOffset = Vector3.new(0, 2.6 * scale, 0)
+	billboard.MaxDistance = 120
 	billboard.AlwaysOnTop = false
 
 	local layout = Instance.new("UIListLayout")
@@ -186,7 +215,7 @@ function CharacterFactory.Build(entry, mutation)
 
 	local nameLabel = Instance.new("TextLabel")
 	nameLabel.Name = "NameLabel"
-	nameLabel.Size = UDim2.new(1, 0, 0, 34)
+	nameLabel.Size = UDim2.new(1, 0, 0, math.floor(34 * labelMul))
 	nameLabel.BackgroundTransparency = 1
 	nameLabel.Text = displayName
 	nameLabel.TextColor3 = (mutation ~= "None") and Config.Mutations[mutation].color or rarityColor
@@ -197,7 +226,7 @@ function CharacterFactory.Build(entry, mutation)
 
 	local infoLabel = Instance.new("TextLabel")
 	infoLabel.Name = "InfoLabel"
-	infoLabel.Size = UDim2.new(1, 0, 0, 26)
+	infoLabel.Size = UDim2.new(1, 0, 0, math.floor(26 * labelMul))
 	infoLabel.BackgroundTransparency = 1
 	infoLabel.Text = string.upper(entry.rarity) .. "  -  $" .. income .. "/s"
 	infoLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -209,6 +238,12 @@ function CharacterFactory.Build(entry, mutation)
 	billboard.Parent = head
 
 	model.PrimaryPart = root
+
+	-- Rarer brainrots are built bigger (presentation only; the pivot stays
+	-- at the bottom of the disc, so PivotTo placement is unchanged).
+	if scale ~= 1 then
+		model:ScaleTo(scale)
+	end
 
 	return model, { root = root, body = body, head = head }
 end

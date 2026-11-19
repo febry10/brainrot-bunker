@@ -5,6 +5,7 @@
 -- It only displays what the server sends and forwards button presses.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
 
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
 
@@ -52,8 +53,22 @@ local function makeButton(parent, name, text, color)
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(0, 10)
 	corner.Parent = button
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Color3.fromRGB(255, 255, 255)
+	stroke.Transparency = 0.7
+	stroke.Thickness = 1
+	stroke.Parent = button
 	button.Parent = parent
 	return button
+end
+
+local function panelStroke(parent, color)
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = color
+	stroke.Transparency = 0.3
+	stroke.Thickness = 2
+	stroke.Parent = parent
+	return stroke
 end
 
 function Hud.Start(player, remotes)
@@ -61,29 +76,40 @@ function Hud.Start(player, remotes)
 	gui.Name = "BrainrotHUD"
 	gui.ResetOnSpawn = false
 	gui.DisplayOrder = 10
+	gui.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets
 
-	-- Top centre: title, money, income, rebirths, carrying.
+	-- Top centre: title, money, income, rebirths, carrying, next target.
 	local top = Instance.new("Frame")
 	top.Name = "TopBar"
 	top.AnchorPoint = Vector2.new(0.5, 0)
 	top.Position = UDim2.new(0.5, 0, 0, 8)
-	top.Size = UDim2.fromOffset(430, 118)
+	top.Size = UDim2.fromOffset(460, 148)
 	top.BackgroundColor3 = Color3.fromRGB(25, 20, 45)
 	top.BackgroundTransparency = 0.25
 	top.BorderSizePixel = 0
 	local topCorner = Instance.new("UICorner")
 	topCorner.CornerRadius = UDim.new(0, 14)
 	topCorner.Parent = top
+	panelStroke(top, Color3.fromRGB(255, 210, 90))
 	top.Parent = gui
 
 	makeLabel(top, "Title", UDim2.new(1, 0, 0, 26), UDim2.new(0, 0, 0, 2), nil,
 		"BRAINROT BUNKER", 20, Color3.fromRGB(255, 210, 90), Enum.Font.GothamBlack)
-	local moneyLabel = makeLabel(top, "Money", UDim2.new(1, 0, 0, 38), UDim2.new(0, 0, 0, 26), nil,
-		"$" .. commafy(Config.StartMoney), 34, Color3.fromRGB(140, 255, 140), Enum.Font.GothamBlack)
-	local incomeLabel = makeLabel(top, "Income", UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0, 64), nil,
+	local moneyLabel = makeLabel(top, "Money", UDim2.new(1, 0, 0, 44), UDim2.new(0, 0, 0, 26), nil,
+		"$" .. commafy(Config.StartMoney), 40, Color3.fromRGB(140, 255, 140), Enum.Font.GothamBlack)
+	local moneyScale = Instance.new("UIScale")
+	moneyScale.Parent = moneyLabel
+	local incomeLabel = makeLabel(top, "Income", UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0, 72), nil,
 		"+$0/s", 19, Color3.fromRGB(160, 230, 255))
-	local carryLabel = makeLabel(top, "Carrying", UDim2.new(1, 0, 0, 22), UDim2.new(0, 0, 0, 90), nil,
+	local carryLabel = makeLabel(top, "Carrying", UDim2.new(1, 0, 0, 22), UDim2.new(0, 0, 0, 98), nil,
 		"Hands empty - buy a brainrot!", 15, Color3.fromRGB(255, 190, 220))
+	local nextLabel = makeLabel(top, "Next", UDim2.new(1, 0, 0, 22), UDim2.new(0, 0, 0, 122), nil,
+		"", 14, Color3.fromRGB(255, 255, 255))
+	-- Floating "+$X" gain popup over the money line (income feedback).
+	local gainLabel = makeLabel(top, "Gain", UDim2.new(0, 200, 0, 30), UDim2.new(1, -16, 0, 34), Vector2.new(1, 0),
+		"", 22, Color3.fromRGB(170, 255, 170), Enum.Font.GothamBlack)
+	gainLabel.TextXAlignment = Enum.TextXAlignment.Right
+	gainLabel.Visible = false
 
 	-- Top right: the cast & price list.
 	local panel = Instance.new("Frame")
@@ -97,6 +123,7 @@ function Hud.Start(player, remotes)
 	local panelCorner = Instance.new("UICorner")
 	panelCorner.CornerRadius = UDim.new(0, 14)
 	panelCorner.Parent = panel
+	panelStroke(panel, Color3.fromRGB(255, 210, 90))
 	panel.Parent = gui
 
 	makeLabel(panel, "CastTitle", UDim2.new(1, 0, 0, 28), UDim2.new(0, 0, 0, 4), nil,
@@ -127,11 +154,11 @@ function Hud.Start(player, remotes)
 	for _, entry in ipairs(sorted) do
 		local row = Instance.new("TextLabel")
 		row.Name = "Row_" .. entry.id
-		row.Size = UDim2.new(1, 0, 0, 20)
+		row.Size = UDim2.new(1, 0, 0, 22)
 		row.BackgroundTransparency = 1
 		row.TextXAlignment = Enum.TextXAlignment.Left
 		row.Text = entry.name .. "  $" .. commafy(entry.cost) .. "  +" .. entry.income .. "/s"
-		row.TextSize = 13
+		row.TextSize = 14
 		row.TextColor3 = Config.RarityColor(entry.rarity)
 		row.Font = Enum.Font.GothamBold
 		row.Parent = scroll
@@ -182,6 +209,9 @@ function Hud.Start(player, remotes)
 	gui.Parent = player:WaitForChild("PlayerGui")
 
 	-- Server -> client wiring.
+	local lastMoney = nil
+	local gainTween = nil
+	local pulseTween = nil
 	remotes:WaitForChild("StateUpdate").OnClientEvent:Connect(function(state)
 		moneyLabel.Text = "$" .. commafy(state.money)
 		incomeLabel.Text = "+$" .. commafy(state.income) .. "/s    Rebirths: " .. state.rebirths .. " (x" .. state.multiplier .. ")"
@@ -190,6 +220,55 @@ function Hud.Start(player, remotes)
 		else
 			carryLabel.Text = "Hands empty - buy a brainrot!"
 		end
+
+		-- Next brainrot to afford: the cheapest cast member above the
+		-- player's money, as a progress hint in that rarity's color.
+		local nextEntry = nil
+		for _, entry in ipairs(Config.Cast) do
+			if entry.cost > state.money and (nextEntry == nil or entry.cost < nextEntry.cost) then
+				nextEntry = entry
+			end
+		end
+		if nextEntry then
+			nextLabel.Text = "NEXT: " .. nextEntry.name .. "  $" .. commafy(nextEntry.cost)
+				.. "  (need $" .. commafy(nextEntry.cost - state.money) .. " more)"
+			nextLabel.TextColor3 = Config.RarityColor(nextEntry.rarity)
+		else
+			nextLabel.Text = "NEXT: You can afford them all - go Mythic hunting!"
+			nextLabel.TextColor3 = Color3.fromRGB(255, 210, 90)
+		end
+
+		-- Income feedback: when money rises, pop a floating "+$X" over the
+		-- money line and pulse the money text.
+		if lastMoney ~= nil and state.money > lastMoney then
+			local delta = state.money - lastMoney
+			if gainTween then
+				gainTween:Cancel()
+			end
+			if pulseTween then
+				pulseTween:Cancel()
+			end
+			gainLabel.Text = "+$" .. commafy(delta)
+			gainLabel.Position = UDim2.new(1, -16, 0, 40)
+			gainLabel.TextTransparency = 0
+			gainLabel.TextStrokeTransparency = 0.4
+			gainLabel.Visible = true
+			gainTween = TweenService:Create(gainLabel, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				Position = UDim2.new(1, -16, 0, 8),
+				TextTransparency = 1,
+				TextStrokeTransparency = 1,
+			})
+			gainTween:Play()
+			gainTween.Completed:Connect(function()
+				gainLabel.Visible = false
+			end)
+			moneyScale.Scale = 1
+			pulseTween = TweenService:Create(moneyScale, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true), {
+				Scale = 1.13,
+			})
+			pulseTween:Play()
+		end
+		lastMoney = state.money
 	end)
 
 	local notifyToken = 0
