@@ -29,6 +29,9 @@ function Remotes.Init()
 end
 
 function Remotes.Get(name)
+	if not Remotes.folder then
+		Remotes.Init()
+	end
 	return Remotes.folder:WaitForChild(name)
 end
 

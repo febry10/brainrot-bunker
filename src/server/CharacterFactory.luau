@@ -43,7 +43,7 @@ local PROP_BUILDERS = {
 	end,
 	scarf = function(model, ctx)
 		local scarf = makePart("Scarf", Vector3.new(2.0, 0.4, 2.0),
-			CFrame.new(0, 2.82, 0) * CFrame.Angles(0, 0, math.rad(90)), ctx.accent, Enum.Material.SmoothPlastic, Enum.PartType.Cylinder)
+			CFrame.new(0, 2.82, 0), ctx.accent, Enum.Material.SmoothPlastic, Enum.PartType.Cylinder)
 		scarf.Parent = model
 	end,
 	wings = function(model, ctx)
@@ -92,7 +92,7 @@ local PROP_BUILDERS = {
 	end,
 	halo = function(model, ctx)
 		local halo = makePart("Halo", Vector3.new(1.7, 0.14, 1.7),
-			CFrame.new(0, 4.95, 0) * CFrame.Angles(0, 0, math.rad(90)), Color3.fromRGB(255, 225, 90), Enum.Material.Neon, Enum.PartType.Cylinder)
+			CFrame.new(0, 4.95, 0), Color3.fromRGB(255, 225, 90), Enum.Material.Neon, Enum.PartType.Cylinder)
 		halo.Parent = model
 	end,
 	glasses = function(model, ctx)
@@ -105,7 +105,7 @@ local PROP_BUILDERS = {
 	end,
 	cap = function(model, ctx)
 		local top = makePart("Cap", Vector3.new(1.85, 0.32, 1.85),
-			CFrame.new(0, 4.52, 0) * CFrame.Angles(0, 0, math.rad(90)), ctx.accent, Enum.Material.SmoothPlastic, Enum.PartType.Cylinder)
+			CFrame.new(0, 4.52, 0), ctx.accent, Enum.Material.SmoothPlastic, Enum.PartType.Cylinder)
 		top.Parent = model
 		local brim = makePart("CapBrim", Vector3.new(0.9, 0.12, 1.3), CFrame.new(1.15, 4.42, 0), ctx.accent)
 		brim.Parent = model
@@ -149,7 +149,7 @@ function CharacterFactory.Build(entry, mutation)
 	root.Parent = model
 
 	local disc = makePart("Disc", Vector3.new(2.7, 0.3, 2.7),
-		CFrame.new(0, 0.15, 0) * CFrame.Angles(0, 0, math.rad(90)), discColor, Enum.Material.Neon, Enum.PartType.Cylinder)
+		CFrame.new(0, 0.15, 0), discColor, Enum.Material.Neon, Enum.PartType.Cylinder)
 	disc.Parent = model
 
 	local body = makePart("Body", Vector3.new(2.2, 2.5, 1.5), CFrame.new(0, 1.55, 0), bodyColor, bodyMaterial)
