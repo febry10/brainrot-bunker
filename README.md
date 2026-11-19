@@ -1,21 +1,33 @@
-# roblox-brainrot-01 starter
+# BRAINROT BUNKER
 
-A working entry for make.fun's "Make the best AI Roblox brainrot game" bounty (roblox-brainrot-01), laid out as your
-repository: a Rojo project whose game is a grey square that moves with the arrow keys. It is a starting point, not a
-winner, and not yet the 3D game the bounty asks for: its square is drawn on the screen, not in Roblox's 3D world.
+A 3D Roblox brainrot tycoon in the genre *Steal a Brainrot* began, built for make.fun's
+"Make the best AI Roblox brainrot game" bounty (roblox-brainrot-01). An original cast of
+Indonesian-internet brainrots - Kakek Kentang, Tahu Bulat Dadakan, Kucing Oren Barbar,
+Mas Rusdi, Dewa Warteg and more - walks a conveyor across a plaza island. Buy one, carry
+it home on your head, place it on your base and watch it earn money every second. Climb
+the rarity ladder (Common -> Rare -> Epic -> Legendary -> Mythic, with Gold x5 and
+Rainbow x10 mutations), steal from unlocked enemy bases, lock your own, survive the
+periodic TSUNAMI GELOMBANG OTAK, and rebirth for a permanent income multiplier.
 
-- `main.ts` (Node 22, standard library only) hands the game in: it copies `game.rbxl`, `src/`, `screenshots/` and
-  `PLAY.json` to `/output`, leaving out every name that starts with a dot (such as `.gitkeep` or `.DS_Store`, which
-  fail an entry), and writes `/output/dossier.json` with `vendor/makefun-roblox.ts`, the kit's copy, unchanged.
-- `game.rbxl` is the place Rojo builds from `src/` and `default.project.json`; `screenshots/` holds three captures of
-  it; `PLAY.json` names no place yet, so the gate refuses the starter as it stands until it names your published one.
-- One of your screenshots must also be your game's first thumbnail on Roblox: the same picture, uploaded on the
-  Creator Dashboard with your game's icon.
-- `TOUR.json` is an example of the optional tour: for each screenshot, the keys that bring the game to that screen.
+## Layout
 
-Run it as the grader does, writing `out/` in place of `/output`:
+A Rojo project: Luau sources under `src/` build into `game.rbxl`.
 
+- `src/shared/Config.luau` - every tunable number and the whole cast (ReplicatedStorage).
+- `src/server/` - `init.server.luau` bootstrap plus one module per job:
+  `GameState` (all state), `WorldBuilder` (the island, conveyor, 8 bases, shop),
+  `CharacterFactory` (blocky brainrot models + labels), `ConveyorService`,
+  `EconomyService` (income tick, buy/carry/place), `BaseService`, `StealService`
+  (stealing + base locks), `WaveService` (the tsunami), `RebirthService`
+  (rebirths + upgrades), `Remotes`.
+- `src/client/` - `Game.client.luau` bootstrap and `Hud.luau` (money/income HUD,
+  cast & price list, buttons, tsunami banner).
+
+## Build and hand in
+
+    rojo build default.project.json --output game.rbxl
     mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 
-The rules are on the bounty's page (/bounty/roblox-brainrot-01) and in the kit's RULES.txt,
-which gives every command in order (Before you submit, then Enter).
+`main.ts` (Node 22, standard library only) copies `game.rbxl`, `src/`, `screenshots/`
+and `PLAY.json` to the output directory and writes `dossier.json` with
+`vendor/makefun-roblox.ts`, the kit's copy, unchanged.
