@@ -1,7 +1,8 @@
 -- Hud.luau (client ModuleScript)
--- The ScreenGui: money + income at the top centre (kept clear of Roblox's
--- own top-left menu), the cast & price list on the right, action buttons
--- bottom-right, a notify line, and the big tsunami countdown banner.
+-- The ScreenGui: money + income in a width-capped bar at the top centre
+-- (kept clear of Roblox's own top-left menu), the cast & price list on the
+-- right with the action buttons in their own frame directly below it (the
+-- two never overlap), a notify line, and the big tsunami countdown banner.
 -- It only displays what the server sends and forwards button presses.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -83,7 +84,14 @@ function Hud.Start(player, remotes)
 	top.Name = "TopBar"
 	top.AnchorPoint = Vector2.new(0.5, 0)
 	top.Position = UDim2.new(0.5, 0, 0, 8)
-	top.Size = UDim2.fromOffset(460, 176)
+	-- Width follows the screen (44%) but is capped at 560px, so the bar can
+	-- never stretch into the right-hand column; height is fixed and the bar
+	-- only ever extends downward from the top edge.
+	top.Size = UDim2.new(0.44, 0, 0, 176)
+	local topConstraint = Instance.new("UISizeConstraint")
+	topConstraint.MinSize = Vector2.new(280, 176)
+	topConstraint.MaxSize = Vector2.new(560, 176)
+	topConstraint.Parent = top
 	top.BackgroundColor3 = Color3.fromRGB(25, 20, 45)
 	top.BackgroundTransparency = 0.25
 	top.BorderSizePixel = 0
@@ -125,6 +133,7 @@ function Hud.Start(player, remotes)
 	panel.BackgroundColor3 = Color3.fromRGB(25, 20, 45)
 	panel.BackgroundTransparency = 0.25
 	panel.BorderSizePixel = 0
+	panel.ClipsDescendants = true
 	local panelCorner = Instance.new("UICorner")
 	panelCorner.CornerRadius = UDim.new(0, 14)
 	panelCorner.Parent = panel
@@ -169,12 +178,13 @@ function Hud.Start(player, remotes)
 		row.Parent = scroll
 	end
 
-	-- Bottom right: action buttons.
+	-- Right column, directly below the cast panel: the action buttons in
+	-- their own frame, so they can never cover the price list rows.
 	local buttons = Instance.new("Frame")
 	buttons.Name = "Buttons"
-	buttons.AnchorPoint = Vector2.new(1, 1)
-	buttons.Position = UDim2.new(1, -10, 1, -10)
-	buttons.Size = UDim2.fromOffset(188, 244)
+	buttons.AnchorPoint = Vector2.new(1, 0)
+	buttons.Position = UDim2.new(1, -10, 0, 314)
+	buttons.Size = UDim2.fromOffset(252, 244)
 	buttons.BackgroundTransparency = 1
 	local buttonLayout = Instance.new("UIListLayout")
 	buttonLayout.FillDirection = Enum.FillDirection.Vertical
@@ -211,7 +221,7 @@ function Hud.Start(player, remotes)
 	notifyLabel.Visible = false
 
 	-- Centre: the tsunami banner.
-	local banner = makeLabel(gui, "WaveBanner", UDim2.new(0, 760, 0, 64), UDim2.new(0.5, 0, 0, 140), Vector2.new(0.5, 0),
+	local banner = makeLabel(gui, "WaveBanner", UDim2.new(0, 720, 0, 64), UDim2.new(0.5, 0, 0, 196), Vector2.new(0.5, 0),
 		"", 40, Color3.fromRGB(255, 90, 90), Enum.Font.GothamBlack)
 	banner.Visible = false
 
