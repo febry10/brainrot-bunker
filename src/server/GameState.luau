@@ -22,6 +22,7 @@ GameState.bases = {} -- [1..8] -> base table
 GameState.brainrots = {} -- [id] -> record
 GameState.conveyor = {} -- array of records currently walking the lane
 GameState.nextId = 0
+GameState.isNight = false -- set by DayNightService; read by spawns + HUD
 
 -- Bases ---------------------------------------------------------------------
 
@@ -61,6 +62,13 @@ function GameState.CreatePlayerData(player)
 		placed = {}, -- array of records earning on the base
 		baseIndex = nil,
 		lastPlaceAt = 0,
+		-- Lifetime counters the quest system reads (never decrease).
+		stats = { bought = 0, placed = 0, earned = 0, fusions = 0, wavesSurvived = 0 },
+		-- Brainrotdex: cast ids ever owned, and milestone counts already paid.
+		dex = {}, -- [castId] -> true
+		dexPaid = {}, -- array of milestone counts (5 / 10 / 14)
+		quest = nil, -- active quest table, owned by QuestService
+		loadAttempted = false, -- DataService loads at most once per session
 	}
 
 	local leaderstats = Instance.new("Folder")
@@ -93,6 +101,31 @@ end
 
 function GameState.RebirthMultiplier(data)
 	return Config.RebirthIncomeMulPer ^ data.rebirths
+end
+
+-- The lifetime counter a quest kind measures.
+local STAT_BY_KIND = {
+	buy = "bought",
+	place = "placed",
+	earn = "earned",
+	fuse = "fusions",
+	survive = "wavesSurvived",
+}
+
+function GameState.StatFor(data, kind)
+	local field = STAT_BY_KIND[kind]
+	if not field or not data.stats then
+		return 0
+	end
+	return data.stats[field] or 0
+end
+
+function GameState.DexCount(data)
+	local n = 0
+	for _ in pairs(data.dex) do
+		n += 1
+	end
+	return n
 end
 
 -- Total $/s a player's placed brainrots earn right now (mutations already

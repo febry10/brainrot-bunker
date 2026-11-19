@@ -83,7 +83,7 @@ function Hud.Start(player, remotes)
 	top.Name = "TopBar"
 	top.AnchorPoint = Vector2.new(0.5, 0)
 	top.Position = UDim2.new(0.5, 0, 0, 8)
-	top.Size = UDim2.fromOffset(460, 148)
+	top.Size = UDim2.fromOffset(460, 176)
 	top.BackgroundColor3 = Color3.fromRGB(25, 20, 45)
 	top.BackgroundTransparency = 0.25
 	top.BorderSizePixel = 0
@@ -105,6 +105,11 @@ function Hud.Start(player, remotes)
 		"Hands empty - buy a brainrot!", 15, Color3.fromRGB(255, 190, 220))
 	local nextLabel = makeLabel(top, "Next", UDim2.new(1, 0, 0, 22), UDim2.new(0, 0, 0, 122), nil,
 		"", 14, Color3.fromRGB(255, 255, 255))
+	local questLabel = makeLabel(top, "Quest", UDim2.new(1, 0, 0, 22), UDim2.new(0, 0, 0, 146), nil,
+		"", 14, Color3.fromRGB(255, 220, 120))
+	local dayLabel = makeLabel(top, "DayPhase", UDim2.new(0, 170, 0, 22), UDim2.new(1, -8, 0, 4), Vector2.new(1, 0),
+		"DAY", 13, Color3.fromRGB(160, 230, 255))
+	dayLabel.TextXAlignment = Enum.TextXAlignment.Right
 	-- Floating "+$X" gain popup over the money line (income feedback).
 	local gainLabel = makeLabel(top, "Gain", UDim2.new(0, 200, 0, 30), UDim2.new(1, -16, 0, 34), Vector2.new(1, 0),
 		"", 22, Color3.fromRGB(170, 255, 170), Enum.Font.GothamBlack)
@@ -126,7 +131,7 @@ function Hud.Start(player, remotes)
 	panelStroke(panel, Color3.fromRGB(255, 210, 90))
 	panel.Parent = gui
 
-	makeLabel(panel, "CastTitle", UDim2.new(1, 0, 0, 28), UDim2.new(0, 0, 0, 4), nil,
+	local castTitle = makeLabel(panel, "CastTitle", UDim2.new(1, 0, 0, 28), UDim2.new(0, 0, 0, 4), nil,
 		"CAST & PRICES", 18, Color3.fromRGB(255, 210, 90), Enum.Font.GothamBlack)
 
 	local scroll = Instance.new("ScrollingFrame")
@@ -169,7 +174,7 @@ function Hud.Start(player, remotes)
 	buttons.Name = "Buttons"
 	buttons.AnchorPoint = Vector2.new(1, 1)
 	buttons.Position = UDim2.new(1, -10, 1, -10)
-	buttons.Size = UDim2.fromOffset(188, 192)
+	buttons.Size = UDim2.fromOffset(188, 244)
 	buttons.BackgroundTransparency = 1
 	local buttonLayout = Instance.new("UIListLayout")
 	buttonLayout.FillDirection = Enum.FillDirection.Vertical
@@ -181,6 +186,7 @@ function Hud.Start(player, remotes)
 	local rebirthButton = makeButton(buttons, "RebirthButton", "REBIRTH (R)", Color3.fromRGB(150, 70, 220))
 	local speedButton = makeButton(buttons, "SpeedButton", "SPEED +4  $" .. commafy(Config.Upgrades.Speed.cost), Color3.fromRGB(60, 130, 220))
 	local carryButton = makeButton(buttons, "CarryButton", "CARRY 2  $" .. commafy(Config.Upgrades.Carry.cost), Color3.fromRGB(220, 130, 50))
+	local fuseButton = makeButton(buttons, "FuseButton", "FUSE 3 -> 1 UP (F)", Color3.fromRGB(200, 60, 140))
 
 	local clientAction = remotes:WaitForChild("ClientAction")
 	lockButton.MouseButton1Click:Connect(function()
@@ -194,6 +200,9 @@ function Hud.Start(player, remotes)
 	end)
 	carryButton.MouseButton1Click:Connect(function()
 		clientAction:FireServer("BuyCarry")
+	end)
+	fuseButton.MouseButton1Click:Connect(function()
+		clientAction:FireServer("Fuse")
 	end)
 
 	-- Bottom centre: one-line feedback.
@@ -215,6 +224,19 @@ function Hud.Start(player, remotes)
 	remotes:WaitForChild("StateUpdate").OnClientEvent:Connect(function(state)
 		moneyLabel.Text = "$" .. commafy(state.money)
 		incomeLabel.Text = "+$" .. commafy(state.income) .. "/s    Rebirths: " .. state.rebirths .. " (x" .. state.multiplier .. ")"
+		if state.questLine ~= nil then
+			questLabel.Text = state.questLine
+		end
+		if state.dexCount ~= nil then
+			castTitle.Text = "CAST & PRICES  -  DEX " .. state.dexCount .. "/" .. #Config.Cast
+		end
+		if state.isNight then
+			dayLabel.Text = "NIGHT - MUTATIONS UP!"
+			dayLabel.TextColor3 = Color3.fromRGB(255, 150, 220)
+		else
+			dayLabel.Text = "DAY"
+			dayLabel.TextColor3 = Color3.fromRGB(160, 230, 255)
+		end
 		if state.carrying > 0 then
 			carryLabel.Text = "Carrying " .. state.carrying .. "/" .. state.capacity .. ": " .. state.carryName
 		else
@@ -280,6 +302,22 @@ function Hud.Start(player, remotes)
 		task.delay(2.6, function()
 			if notifyToken == token then
 				notifyLabel.Visible = false
+			end
+		end)
+	end)
+
+	-- Server announcements (giant events) reuse the big centre banner.
+	local announceToken = 0
+	remotes:WaitForChild("Announce").OnClientEvent:Connect(function(text)
+		announceToken += 1
+		local token = announceToken
+		banner.Text = text
+		banner.TextColor3 = Color3.fromRGB(255, 205, 50)
+		banner.Visible = true
+		task.delay(4, function()
+			if announceToken == token then
+				banner.Visible = false
+				banner.TextColor3 = Color3.fromRGB(255, 90, 90)
 			end
 		end)
 	end)

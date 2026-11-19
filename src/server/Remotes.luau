@@ -2,15 +2,16 @@
 -- Creates and hands out the RemoteEvents in ReplicatedStorage.BrainrotRemotes:
 --   StateUpdate  server -> client  HUD numbers (money, income, ...)
 --   WaveWarning  server -> client  tsunami countdown (seconds)
+--   Announce     server -> client  big banner text (giant events, ...)
 --   Notify       server -> client  one-line feedback message
---   ClientAction client -> server  "Lock" | "Rebirth" | "BuySpeed" | "BuyCarry"
+--   ClientAction client -> server  "Lock" | "Rebirth" | "BuySpeed" | "BuyCarry" | "Fuse"
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Remotes = {}
 Remotes.folder = nil
 
-local NAMES = { "StateUpdate", "WaveWarning", "Notify", "ClientAction" }
+local NAMES = { "StateUpdate", "WaveWarning", "Announce", "Notify", "ClientAction" }
 
 function Remotes.Init()
 	if Remotes.folder then

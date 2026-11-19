@@ -80,6 +80,12 @@ function WaveService.Start(spawnCFrame)
 				task.wait(0.05)
 			end
 			wall:Destroy()
+			-- Everyone the wave never touched survived it (quest counter).
+			for player, data in pairs(GameState.players) do
+				if not hit[player] then
+					data.stats.wavesSurvived += 1
+				end
+			end
 		end
 	end)
 end

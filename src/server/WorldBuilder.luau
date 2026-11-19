@@ -311,6 +311,7 @@ function WorldBuilder.Build()
 	local speedPrompt = pedestal("SpeedPedestal", "SPEED +4 - $" .. Config.Upgrades.Speed.cost, "Buy Speed")
 	local carryPrompt = pedestal("CarryPedestal", "CARRY +1 - $" .. Config.Upgrades.Carry.cost, "Buy Carry")
 	local rebirthPrompt = pedestal("RebirthPedestal", "REBIRTH - $" .. Config.RebirthCost, "Rebirth!")
+	local fusionPrompt = pedestal("FusionPedestal", "FUSION - 3 = 1 TIER UP!", "Fuse!")
 
 	-- Folder all brainrot models live in.
 	local models = Instance.new("Folder")
@@ -323,6 +324,7 @@ function WorldBuilder.Build()
 		speedPrompt = speedPrompt,
 		carryPrompt = carryPrompt,
 		rebirthPrompt = rebirthPrompt,
+		fusionPrompt = fusionPrompt,
 	}
 end
 

@@ -19,7 +19,8 @@ local rng = Random.new()
 
 local function spawnBrainrot()
 	local entry = Config.PickCast(rng)
-	local mutation = Config.RollMutation(entry.rarity, rng)
+	local mutation = Config.RollMutation(entry.rarity, rng,
+		GameState.isNight and Config.NightMutationMul or 1)
 	local model, visuals = CharacterFactory.Build(entry, mutation)
 
 	local record = {
@@ -73,7 +74,7 @@ function ConveyorService.Start()
 		local t = os.clock()
 		for i = #GameState.conveyor, 1, -1 do
 			local record = GameState.conveyor[i]
-			record.x += record.entry.speed * dt
+			record.x += (record.speed or record.entry.speed) * dt
 			record.bobPhase += dt * 7
 			if record.x >= Config.LaneMaxX then
 				table.remove(GameState.conveyor, i)

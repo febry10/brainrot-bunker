@@ -23,6 +23,13 @@ function EconomyService.SendState(player)
 	if data.carrying[1] then
 		carryName = data.carrying[1].displayName
 	end
+	local questLine = ""
+	if data.quest then
+		local done = GameState.StatFor(data, data.quest.kind) - data.quest.baseline
+		questLine = "QUEST: " .. string.format(data.quest.label, data.quest.target)
+			.. " (" .. math.min(done, data.quest.target) .. "/" .. data.quest.target .. ")"
+			.. "  +$" .. data.quest.reward
+	end
 	Remotes.Get("StateUpdate"):FireClient(player, {
 		money = math.floor(data.money),
 		income = GameState.ComputeIncomePerSec(player),
@@ -32,6 +39,9 @@ function EconomyService.SendState(player)
 		capacity = data.carryCapacity,
 		carryName = carryName,
 		lockReadyIn = 0,
+		dexCount = GameState.DexCount(data),
+		questLine = questLine,
+		isNight = GameState.isNight,
 	})
 end
 
@@ -53,6 +63,8 @@ function EconomyService.TryBuy(player, record)
 	GameState.RemoveFromList(GameState.conveyor, record)
 	record.state = "Carried"
 	record.owner = player
+	data.stats.bought += 1
+	data.dex[record.entry.id] = true
 	table.insert(data.carrying, record)
 	if record.buyPrompt then
 		record.buyPrompt:Destroy()
@@ -61,6 +73,58 @@ function EconomyService.TryBuy(player, record)
 	GameState.SyncLeaderstats(player)
 	EconomyService.SendState(player)
 	Remotes.Notify(player, "Got " .. record.displayName .. "! Carry it to your base.")
+end
+
+-- Put a record on a specific pad of a base: registry fields, the model
+-- transform, and the steal prompt anyone else can use while it is unlocked.
+-- Shared by TryPlace, FusionService and DataService restores.
+local function attachToPad(player, record, base, padIndex)
+	local data = GameState.Get(player)
+	base.pads[padIndex] = record
+	record.state = "Placed"
+	record.owner = player
+	record.baseIndex = base.index
+	record.padIndex = padIndex
+	table.insert(data.placed, record)
+
+	local pad = base.world.pads[padIndex]
+	record.model:PivotTo(CFrame.new(pad.pos) * CFrame.Angles(0, base.world.faceAngle, 0))
+
+	-- Anyone else may try to steal it while the base is unlocked.
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = "StealPrompt"
+	prompt.ActionText = "STEAL"
+	prompt.ObjectText = record.displayName
+	prompt.MaxActivationDistance = 12
+	prompt.RequiresLineOfSight = false
+	prompt.Enabled = not GameState.IsLocked(base)
+	prompt.Parent = record.bodyPart
+	prompt.Triggered:Connect(function(otherPlayer)
+		local StealService = require(script.Parent:WaitForChild("StealService"))
+		StealService.TrySteal(otherPlayer, record)
+	end)
+	record.stealPrompt = prompt
+end
+
+-- Place a record (built by the caller) on the first free pad of the
+-- player's own base. Returns false when there is no base or no free pad.
+function EconomyService.PlaceOnFreePad(player, record)
+	local data = GameState.Get(player)
+	if not data or not data.baseIndex then
+		return false
+	end
+	local base = GameState.GetBase(data.baseIndex)
+	if not base then
+		return false
+	end
+	for i = 1, 6 do
+		if not base.pads[i] then
+			attachToPad(player, record, base, i)
+			EconomyService.SendState(player)
+			return true
+		end
+	end
+	return false
 end
 
 -- Place the longest-carried brainrot on a free display pad of your base.
@@ -93,29 +157,8 @@ function EconomyService.TryPlace(player)
 	data.lastPlaceAt = now
 
 	local record = table.remove(data.carrying, 1)
-	base.pads[padIndex] = record
-	record.state = "Placed"
-	record.baseIndex = base.index
-	record.padIndex = padIndex
-	table.insert(data.placed, record)
-
-	local pad = base.world.pads[padIndex]
-	record.model:PivotTo(CFrame.new(pad.pos) * CFrame.Angles(0, base.world.faceAngle, 0))
-
-	-- Anyone else may try to steal it while the base is unlocked.
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.Name = "StealPrompt"
-	prompt.ActionText = "STEAL"
-	prompt.ObjectText = record.displayName
-	prompt.MaxActivationDistance = 12
-	prompt.RequiresLineOfSight = false
-	prompt.Enabled = not GameState.IsLocked(base)
-	prompt.Parent = record.bodyPart
-	prompt.Triggered:Connect(function(otherPlayer)
-		local StealService = require(script.Parent:WaitForChild("StealService"))
-		StealService.TrySteal(otherPlayer, record)
-	end)
-	record.stealPrompt = prompt
+	attachToPad(player, record, base, padIndex)
+	data.stats.placed += 1
 
 	EconomyService.SendState(player)
 	Remotes.Notify(player, record.displayName .. " placed! Earning $" .. record.income .. "/s")
@@ -130,6 +173,7 @@ function EconomyService.Start()
 				local income = GameState.ComputeIncomePerSec(player)
 				if income > 0 then
 					data.money += income
+					data.stats.earned += income
 					GameState.SyncLeaderstats(player)
 				end
 				EconomyService.SendState(player)

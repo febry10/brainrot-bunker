@@ -109,6 +109,66 @@ Config.Cast = {
 		body = Color3.fromRGB(255, 240, 200), head = Color3.fromRGB(255, 246, 220), accent = Color3.fromRGB(255, 215, 60), prop = "halo" },
 }
 
+-- Fusion --------------------------------------------------------------------
+-- Three placed brainrots of the same cast member fuse into one of the next
+-- rarity tier (see FusionService). The result is the cheapest cast member
+-- of the tier above; Mythic cannot fuse further.
+Config.RarityRank = { Common = 1, Rare = 2, Epic = 3, Legendary = 4, Mythic = 5 }
+
+function Config.NextRarity(rarity)
+	local rank = Config.RarityRank[rarity]
+	if not rank or rank >= #Config.RarityOrder then
+		return nil
+	end
+	return Config.RarityOrder[rank + 1]
+end
+
+function Config.FirstOfRarity(rarity)
+	local best = nil
+	for _, entry in ipairs(Config.Cast) do
+		if entry.rarity == rarity and (best == nil or entry.cost < best.cost) then
+			best = entry
+		end
+	end
+	return best
+end
+
+-- Quests ----------------------------------------------------------------------
+-- One active quest per player, drawn from this pool; progress is read from
+-- the lifetime stat counters in GameState (see QuestService). The label is
+-- a string.format pattern with one %d for the target.
+Config.Quests = {
+	{ kind = "buy", target = 3, reward = 300, label = "Buy %d brainrots" },
+	{ kind = "place", target = 4, reward = 400, label = "Place %d brainrots on your base" },
+	{ kind = "earn", target = 2000, reward = 500, label = "Earn $%d from your base" },
+	{ kind = "fuse", target = 1, reward = 1500, label = "Fuse %d brainrot trio" },
+	{ kind = "survive", target = 2, reward = 600, label = "Survive %d tsunamis in a base" },
+}
+
+-- Day / night cycle -------------------------------------------------------------
+Config.DayLengthSeconds = 240 -- one full 24h cycle
+Config.NightStartHour = 18.5 -- Lighting ClockTime hours that count as night
+Config.NightEndHour = 5.5
+Config.NightMutationMul = 2.5 -- mutation odds multiplier while it is night
+
+-- Giant event -------------------------------------------------------------------
+Config.GiantFirstDelay = 75 -- seconds after server start before the first giant
+Config.GiantInterval = 150 -- seconds between giants
+Config.GiantScale = 2.5 -- model scale on top of the rarity scale
+Config.GiantCostMul = 5 -- price multiplier over the plain Gold version
+Config.GiantIncomeMul = 5 -- income multiplier over the plain Gold version
+
+-- Brainrotdex -------------------------------------------------------------------
+Config.DexMilestones = {
+	{ count = 5, reward = 1000 },
+	{ count = 10, reward = 5000 },
+	{ count = 14, reward = 25000 },
+}
+
+-- Persistence -------------------------------------------------------------------
+Config.DataStoreName = "BrainrotBunkerPlayerData_v1"
+Config.AutosaveSeconds = 150
+
 -- Helpers -------------------------------------------------------------------
 
 function Config.GetEntry(id)
@@ -141,15 +201,19 @@ function Config.PickCast(rng)
 end
 
 -- Roll a mutation name ("None" | "Gold" | "Rainbow") for a rarity.
-function Config.RollMutation(rarity, rng)
+-- oddsMul scales both chances (the day/night cycle boosts them at night).
+function Config.RollMutation(rarity, rng, oddsMul)
 	local odds = Config.MutationOdds[rarity]
 	if not odds then
 		return "None"
 	end
+	local mul = oddsMul or 1
+	local rainbow = math.min(odds.Rainbow * mul, 0.6)
+	local gold = math.min(odds.Gold * mul, 0.9 - rainbow)
 	local roll = rng:NextNumber()
-	if roll < odds.Rainbow then
+	if roll < rainbow then
 		return "Rainbow"
-	elseif roll < odds.Rainbow + odds.Gold then
+	elseif roll < rainbow + gold then
 		return "Gold"
 	end
 	return "None"

@@ -27,3 +27,10 @@ ContextActionService:BindAction("BrainrotRebirth", function(_, inputState)
 	end
 	return Enum.ContextActionResult.Pass
 end, false, Enum.KeyCode.R)
+
+ContextActionService:BindAction("BrainrotFuse", function(_, inputState)
+	if inputState == Enum.UserInputState.Begin then
+		clientAction:FireServer("Fuse")
+	end
+	return Enum.ContextActionResult.Pass
+end, false, Enum.KeyCode.F)

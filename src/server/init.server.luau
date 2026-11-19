@@ -15,7 +15,8 @@ local modules = {}
 for _, name in ipairs({
 	"GameState", "Remotes", "WorldBuilder", "ConveyorService",
 	"EconomyService", "BaseService", "StealService", "WaveService",
-	"RebirthService",
+	"RebirthService", "FusionService", "QuestService", "DayNightService",
+	"GiantService", "DexService", "DataService",
 }) do
 	local ok, result = pcall(function()
 		return require(script:WaitForChild(name))
@@ -36,6 +37,12 @@ local BaseService = modules.BaseService
 local StealService = modules.StealService
 local WaveService = modules.WaveService
 local RebirthService = modules.RebirthService
+local FusionService = modules.FusionService
+local QuestService = modules.QuestService
+local DayNightService = modules.DayNightService
+local GiantService = modules.GiantService
+local DexService = modules.DexService
+local DataService = modules.DataService
 
 local function start(name, fn)
 	local ok, err = pcall(fn)
@@ -73,6 +80,11 @@ if world and GameState then
 			RebirthService.Init(world)
 		end)
 	end
+	if FusionService then
+		start("FusionService", function()
+			FusionService.Init(world)
+		end)
+	end
 end
 
 if ConveyorService then
@@ -95,6 +107,31 @@ if WaveService and world then
 		WaveService.Start(world.spawnCFrame)
 	end)
 end
+if QuestService then
+	start("QuestService", function()
+		QuestService.Start()
+	end)
+end
+if DayNightService then
+	start("DayNightService", function()
+		DayNightService.Start()
+	end)
+end
+if GiantService then
+	start("GiantService", function()
+		GiantService.Start()
+	end)
+end
+if DexService then
+	start("DexService", function()
+		DexService.Start()
+	end)
+end
+if DataService then
+	start("DataService", function()
+		DataService.Start()
+	end)
+end
 print("[BrainrotBunker] world ready")
 
 if GameState then
@@ -102,6 +139,13 @@ if GameState then
 		GameState.CreatePlayerData(player)
 		if BaseService then
 			BaseService.AssignBase(player)
+		end
+		if DataService then
+			-- Load the saved snapshot and rebuild placed brainrots on the
+			-- base just assigned. Guarded: persistence can never block a join.
+			pcall(function()
+				DataService.LoadAndRestore(player)
+			end)
 		end
 		player.CharacterAdded:Connect(function()
 			task.wait(0.2)
@@ -119,6 +163,12 @@ if GameState then
 	end
 
 	local function onPlayerRemoving(player)
+		if DataService then
+			-- Save BEFORE the base is released and its records destroyed.
+			pcall(function()
+				DataService.SavePlayer(player)
+			end)
+		end
 		if BaseService then
 			BaseService.ReleaseBase(player)
 		end
@@ -146,6 +196,8 @@ if Remotes then
 				RebirthService.BuyUpgrade(player, "Speed")
 			elseif action == "BuyCarry" and RebirthService then
 				RebirthService.BuyUpgrade(player, "Carry")
+			elseif action == "Fuse" and FusionService then
+				FusionService.TryFuse(player)
 			end
 		end)
 	end)
