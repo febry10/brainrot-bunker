@@ -18,21 +18,26 @@ local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Co
 local GameState = {}
 
 GameState.players = {} -- [Player] -> data table
-GameState.bases = {} -- [1..8] -> base table
+GameState.bases = {} -- [index] -> base table (village 1-8, city 9-12, cloud 13-16)
 GameState.brainrots = {} -- [id] -> record
-GameState.conveyor = {} -- array of records currently walking the lane
+-- One conveyor list per world; GameState.conveyor stays as the village
+-- alias (GiantService and older code read it).
+GameState.conveyors = { Village = {}, City = {}, Cloud = {} }
+GameState.conveyor = GameState.conveyors.Village
 GameState.nextId = 0
 GameState.isNight = false -- set by DayNightService; read by spawns + HUD
 
 -- Bases ---------------------------------------------------------------------
 
--- worldBases: the array WorldBuilder.Build() returned (geometry + refs).
+-- worldBases: the array WorldBuilder.Build() returned (geometry + refs);
+-- each geometry table carries a worldId naming its world.
 function GameState.InitBases(worldBases)
 	GameState.bases = {}
 	for i, world in ipairs(worldBases) do
 		GameState.bases[i] = {
 			index = i,
 			world = world,
+			worldId = world.worldId or "Village",
 			owner = nil, -- Player or nil
 			pads = {}, -- [padIndex] -> record or nil
 			lockedUntil = 0, -- os.clock() time the current lock ends
@@ -59,15 +64,22 @@ function GameState.CreatePlayerData(player)
 		speedBonus = 0,
 		speedStacks = 0,
 		carrying = {}, -- array of records, oldest first
-		placed = {}, -- array of records earning on the base
-		baseIndex = nil,
+		placed = {}, -- array of records earning on bases (any world)
+		baseIndex = nil, -- the village base index (kept in sync with worldBases.Village)
+		worldBases = {}, -- [worldId] -> baseIndex claimed in that world
+		currentWorld = "Village", -- world the player is currently in
+		pendingRestore = {}, -- [worldId] -> saved placed list awaiting a base there
 		lastPlaceAt = 0,
 		-- Lifetime counters the quest system reads (never decrease).
-		stats = { bought = 0, placed = 0, earned = 0, fusions = 0, wavesSurvived = 0 },
+		stats = {
+			bought = 0, placed = 0, earned = 0, fusions = 0, wavesSurvived = 0,
+			locks = 0, boughtRare = 0, placedCity = 0, cloudVisits = 0,
+		},
 		-- Brainrotdex: cast ids ever owned, and milestone counts already paid.
 		dex = {}, -- [castId] -> true
 		dexPaid = {}, -- array of milestone counts (5 / 10 / 14)
 		quest = nil, -- active quest table, owned by QuestService
+		chainStep = 1, -- current step of the structured quest chain (QuestService)
 		loadAttempted = false, -- DataService loads at most once per session
 	}
 
@@ -110,9 +122,20 @@ local STAT_BY_KIND = {
 	earn = "earned",
 	fuse = "fusions",
 	survive = "wavesSurvived",
+	lock = "locks",
+	buyRare = "boughtRare",
+	placeCity = "placedCity",
+	visitCloud = "cloudVisits",
 }
 
 function GameState.StatFor(data, kind)
+	-- Snapshot kinds the quest chain uses (measured absolutely, with a
+	-- zero baseline): how many brainrots you hold right now, rebirths.
+	if kind == "own" then
+		return #data.carrying + #data.placed
+	elseif kind == "rebirth" then
+		return data.rebirths or 0
+	end
 	local field = STAT_BY_KIND[kind]
 	if not field or not data.stats then
 		return 0

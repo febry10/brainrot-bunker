@@ -1,13 +1,14 @@
 -- WorldBuilder.luau (server ModuleScript)
--- The world's static geometry -- the island, the market-street conveyor,
--- the old-time village, the eight base plots, the hero letters, the decor
--- -- is BAKED INTO THE PLACE FILE (Rojo JSON models under models/, mapped
--- to Workspace.World), so it is visible in Studio before any script runs
--- and can never vanish to a runtime error. This module wires only the
--- DYNAMIC layer on top of it: display pads, owner-sign and portal labels,
--- shop prompts, the cast price board and the entrance arch text. It
--- returns the geometry refs the services need (base pads/signs/lock
--- parts, shop prompts, spawn CFrame) -- the same contract as before.
+-- The worlds' static geometry -- the village island, the city, the
+-- cloud land, their conveyor streets, base plots, hero letters, decor
+-- -- is BAKED INTO THE PLACE FILE (Rojo JSON models under models/,
+-- mapped to Workspace.World), so it is visible in Studio before any
+-- script runs and can never vanish to a runtime error. This module
+-- wires only the DYNAMIC layer on top of it: display pads, owner-sign
+-- and portal labels, shop prompts, sign-board texts and the entrance
+-- arch text. It returns the geometry refs the services need (per-world
+-- bases/spawns/portals, shop prompts) -- the same contract as before,
+-- extended to three worlds.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
@@ -78,12 +79,10 @@ local function commafy(n)
 	return s .. out
 end
 
--- A freestanding board part with the same text on both large faces
--- (SurfaceGui), so it reads from either side. lines: {text, color, size}.
-local function makeSignBoard(parent, name, size, cframe, boardColor, lines)
-	local board = makePart(parent, name, size, cframe, boardColor, Enum.Material.SmoothPlastic)
-	board.CanCollide = false
-	for _, face in ipairs({ Enum.NormalId.Front, Enum.NormalId.Back }) do
+-- Put the same text lines on the given faces of a board part (SurfaceGui),
+-- so it reads from the street. lines: {text, color, size}.
+local function attachSignText(board, lines, faces)
+	for _, face in ipairs(faces or { Enum.NormalId.Front, Enum.NormalId.Back }) do
 		local surface = Instance.new("SurfaceGui")
 		surface.Face = face
 		surface.PixelsPerStud = 40
@@ -109,8 +108,15 @@ local function makeSignBoard(parent, name, size, cframe, boardColor, lines)
 	return board
 end
 
--- The big scoreboard north of the conveyor, facing the spawn hero view:
--- the whole cast in rarity colors with prices and income.
+-- A freestanding board part with text on both large faces.
+local function makeSignBoard(parent, name, size, cframe, boardColor, lines)
+	local board = makePart(parent, name, size, cframe, boardColor, Enum.Material.SmoothPlastic)
+	board.CanCollide = false
+	return attachSignText(board, lines)
+end
+
+-- The big scoreboard north of the village conveyor, facing the spawn
+-- hero view: the whole cast in rarity colors with prices and income.
 local function buildPriceBoard(parent)
 	local board = makePart(parent, "PriceBoard", Vector3.new(36, 14.5, 0.8), CFrame.new(0, 8.6, -22), Color3.fromRGB(28, 24, 52), Enum.Material.SmoothPlastic)
 	board.CanCollide = false
@@ -139,7 +145,7 @@ local function buildPriceBoard(parent)
 		title.Size = UDim2.new(1, 0, 0, 64)
 		title.Position = UDim2.new(0, 0, 0, 8)
 		title.BackgroundTransparency = 1
-		title.Text = "CAST & PRICES"
+		title.Text = "BRAINROT MARKET"
 		title.TextColor3 = Color3.fromRGB(255, 210, 90)
 		title.TextScaled = true
 		title.Font = Enum.Font.GothamBlack
@@ -185,32 +191,26 @@ local function buildPriceBoard(parent)
 	end
 end
 
--- Wires one static base plot (Workspace.World.Bases.Base<index>) with its
--- dynamic layer: the six display pads, the owner sign labels and the lock
--- label. Layout math matches the baked plot exactly: north bases (1-4)
--- sit at z=-58 and face +Z toward the plaza; south bases face -Z.
-local function assembleBase(world, index)
-	local isNorth = index <= 4
-	local col = (index - 1) % 4
-	local cx = -84 + col * 56
-	local cz = isNorth and -58 or 58
-	local faceAngle = isNorth and math.rad(-90) or math.rad(90)
-	local color = BASE_COLORS[index]
-
-	local baseFolder = world:WaitForChild("Bases"):WaitForChild("Base" .. index)
+-- Wires one baked base plot (a folder holding Floor / SignBoard /
+-- LockPad / LockWall) with its dynamic layer: the six display pads, the
+-- owner sign labels and the lock label. center is the plot centre with
+-- Y = the ground top the pads float over; faceAngle turns placed models.
+local function assemblePlot(baseFolder, center, faceAngle, color, worldId)
 	local floor = baseFolder:WaitForChild("Floor")
 	local signBoard = baseFolder:WaitForChild("SignBoard")
 	local lockPad = baseFolder:WaitForChild("LockPad")
 	local lockWall = baseFolder:WaitForChild("LockWall")
+	local cx, cz = center.X, center.Z
 
 	-- Six display pads, 3 x 2.
 	local pads = {}
 	local padColor = Color3.fromRGB(245, 245, 245)
 	for row, dz in ipairs({ -6.5, 6.5 }) do
 		for pcol, dx in ipairs({ -11, 0, 11 }) do
-			local padPart = makePart(baseFolder, "Pad", Vector3.new(7, 0.4, 7), CFrame.new(cx + dx, 0.4, cz + dz), padColor, Enum.Material.Neon)
+			local padPart = makePart(baseFolder, "Pad", Vector3.new(7, 0.4, 7),
+				CFrame.new(cx + dx, center.Y + 0.4, cz + dz), padColor, Enum.Material.Neon)
 			padPart.CanCollide = false
-			pads[(row - 1) * 3 + pcol] = { part = padPart, pos = Vector3.new(cx + dx, 0.6, cz + dz) }
+			pads[(row - 1) * 3 + pcol] = { part = padPart, pos = Vector3.new(cx + dx, center.Y + 0.6, cz + dz) }
 		end
 	end
 
@@ -226,8 +226,8 @@ local function assembleBase(world, index)
 	})
 
 	return {
-		index = index,
-		center = Vector3.new(cx, 0, cz),
+		worldId = worldId,
+		center = center,
 		faceAngle = faceAngle,
 		floor = floor,
 		pads = pads,
@@ -240,26 +240,65 @@ local function assembleBase(world, index)
 	}
 end
 
+-- Village plot layout: north bases (1-4) sit at z=-58 and face +Z toward
+-- the plaza; south bases face -Z.
+local function assembleVillageBase(world, index)
+	local isNorth = index <= 4
+	local col = (index - 1) % 4
+	local cx = -84 + col * 56
+	local cz = isNorth and -58 or 58
+	local faceAngle = isNorth and math.rad(-90) or math.rad(90)
+	local baseFolder = world:WaitForChild("Bases"):WaitForChild("Base" .. index)
+	return assemblePlot(baseFolder, Vector3.new(cx, 0, cz), faceAngle, BASE_COLORS[index], "Village")
+end
+
+-- City plot layout: two plots north of the lane, two south, mirroring
+-- the village's proportions around the city origin (x = 800).
+local CITY_PLOTS = { { 758, -58 }, { 842, -58 }, { 758, 58 }, { 842, 58 } }
+
+local function assembleCityBase(cityFolder, i)
+	local cx, cz = CITY_PLOTS[i][1], CITY_PLOTS[i][2]
+	local isNorth = cz < 0
+	local faceAngle = isNorth and math.rad(-90) or math.rad(90)
+	local baseFolder = cityFolder:WaitForChild("CityBases"):WaitForChild("Base" .. i)
+	return assemblePlot(baseFolder, Vector3.new(cx, 0, cz), faceAngle, BASE_COLORS[i + 4], "City")
+end
+
+-- Cloud plot layout: two plots north of the sky lane, two south, on the
+-- floating island deck (ground top y = 260).
+local CLOUD_PLOTS = { { -842, -40 }, { -758, -40 }, { -842, 40 }, { -758, 40 } }
+
+local function assembleCloudBase(cloudFolder, i)
+	local cx, cz = CLOUD_PLOTS[i][1], CLOUD_PLOTS[i][2]
+	local isNorth = cz < 0
+	local faceAngle = isNorth and math.rad(-90) or math.rad(90)
+	local baseFolder = cloudFolder:WaitForChild("CloudBases"):WaitForChild("Base" .. i)
+	return assemblePlot(baseFolder, Vector3.new(cx, 260, cz), faceAngle, BASE_COLORS[i], "Cloud")
+end
+
+local function labelPortal(conveyorFolder)
+	makeLabel(conveyorFolder:WaitForChild("SpawnPortal"):WaitForChild("Beam"), UDim2.fromOffset(200, 44), Vector3.new(0, 2.2, 0), {
+		{ text = "SPAWN", color = Color3.fromRGB(255, 255, 255), height = 44 },
+	})
+	makeLabel(conveyorFolder:WaitForChild("ByePortal"):WaitForChild("Beam"), UDim2.fromOffset(200, 44), Vector3.new(0, 2.2, 0), {
+		{ text = "BYE!", color = Color3.fromRGB(255, 255, 255), height = 44 },
+	})
+end
+
 function WorldBuilder.Build()
 	-- The baked static world (models/ -> Workspace.World).
 	local world = Workspace:WaitForChild("World")
 
-	-- Portal captions on the baked conveyor portal beams.
-	local conveyor = world:WaitForChild("Conveyor")
-	makeLabel(conveyor:WaitForChild("SpawnPortal"):WaitForChild("Beam"), UDim2.fromOffset(200, 44), Vector3.new(0, 2.2, 0), {
-		{ text = "SPAWN", color = Color3.fromRGB(255, 255, 255), height = 44 },
-	})
-	makeLabel(conveyor:WaitForChild("ByePortal"):WaitForChild("Beam"), UDim2.fromOffset(200, 44), Vector3.new(0, 2.2, 0), {
-		{ text = "BYE!", color = Color3.fromRGB(255, 255, 255), height = 44 },
-	})
+	-- Portal captions on the baked village conveyor portal beams.
+	labelPortal(world:WaitForChild("Conveyor"))
 
-	-- Eight bases: four north, four south.
-	local bases = {}
+	-- Eight village bases: four north, four south.
+	local villageBases = {}
 	for i = 1, 8 do
-		bases[i] = assembleBase(world, i)
+		villageBases[i] = assembleVillageBase(world, i)
 	end
 
-	-- Hype boards: the cast price scoreboard behind the conveyor and two
+	-- Hype boards: the market scoreboard behind the conveyor and two
 	-- flank boards by the lane (SurfaceGui text stays dynamic by design).
 	buildPriceBoard(world)
 	makeSignBoard(world, "MutationBoard", Vector3.new(17, 6.5, 0.6),
@@ -313,14 +352,103 @@ function WorldBuilder.Build()
 	local rebirthPrompt = pedestal("RebirthPedestal", "REBIRTH - $" .. Config.RebirthCost, "Rebirth!")
 	local fusionPrompt = pedestal("FusionPedestal", "FUSION - 3 = 1 TIER UP!", "Fuse!")
 
+	-- The village side of the city portal (baked into the plaza model):
+	-- caption its beam; PortalService puts the prompt on the disc.
+	local villagePortal = plaza:WaitForChild("CityPortal")
+	makeLabel(villagePortal:WaitForChild("Beam"), UDim2.fromOffset(300, 48), Vector3.new(0, 2.4, 0), {
+		{ text = "TO THE CITY", color = Color3.fromRGB(120, 230, 255), height = 48 },
+	}, 200)
+
+	-- ============================ THE CITY ============================
+	local city = world:WaitForChild("City")
+	labelPortal(city:WaitForChild("Conveyor"))
+
+	local cityBases = {}
+	for i = 1, 4 do
+		cityBases[i] = assembleCityBase(city, i)
+	end
+
+	-- Neon sign texts on the baked city boards.
+	local signs = city:WaitForChild("Signs")
+	attachSignText(signs:WaitForChild("SignKota"), {
+		{ text = "KOTA BRAINROT", color = Color3.fromRGB(120, 240, 255), size = 110 },
+	}, { Enum.NormalId.Front })
+	attachSignText(signs:WaitForChild("SignMall"), {
+		{ text = "BRAINROT MALL", color = Color3.fromRGB(255, 120, 220), size = 100 },
+	}, { Enum.NormalId.Back })
+	attachSignText(signs:WaitForChild("SignBank"), {
+		{ text = "BANK OTAK", color = Color3.fromRGB(255, 215, 90), size = 100 },
+	}, { Enum.NormalId.Left })
+	attachSignText(signs:WaitForChild("Billboard1"), {
+		{ text = "BRAINROT MALL", color = Color3.fromRGB(255, 255, 255), size = 92 },
+		{ text = "NOW OPEN IN THE CITY!", color = Color3.fromRGB(120, 240, 255), size = 64 },
+	}, { Enum.NormalId.Front })
+	attachSignText(signs:WaitForChild("Billboard2"), {
+		{ text = "VISIT THE CLOUDS!", color = Color3.fromRGB(255, 240, 190), size = 92 },
+		{ text = "RIDE THE WIND PORTAL", color = Color3.fromRGB(190, 240, 255), size = 64 },
+	}, { Enum.NormalId.Right })
+
+	local cityPortal = city:WaitForChild("CityPortal")
+	makeLabel(cityPortal:WaitForChild("Beam"), UDim2.fromOffset(320, 48), Vector3.new(0, 2.4, 0), {
+		{ text = "TO THE VILLAGE", color = Color3.fromRGB(140, 255, 170), height = 48 },
+	}, 200)
+
+	-- Wind portal captions (village + city pads ride the wind up).
+	for _, padModel in ipairs({ plaza:WaitForChild("WindPad"), city:WaitForChild("WindPad") }) do
+		makeLabel(padModel:WaitForChild("Ring"), UDim2.fromOffset(340, 48), Vector3.new(0, 3.4, 0), {
+			{ text = "WIND PORTAL - TO THE CLOUDS!", color = Color3.fromRGB(190, 240, 255), height = 48 },
+		}, 200)
+	end
+
+	-- ========================= THE CLOUD LAND =========================
+	local cloud = world:WaitForChild("Cloud")
+	labelPortal(cloud:WaitForChild("Conveyor"))
+
+	local cloudBases = {}
+	for i = 1, 4 do
+		cloudBases[i] = assembleCloudBase(cloud, i)
+	end
+
+	local dropPad = cloud:WaitForChild("DropPad")
+	makeLabel(dropPad:WaitForChild("Ring"), UDim2.fromOffset(300, 48), Vector3.new(0, 3.2, 0), {
+		{ text = "DROP TO THE VILLAGE", color = Color3.fromRGB(255, 230, 150), height = 48 },
+	}, 200)
+
 	-- Folder all brainrot models live in.
 	local models = Instance.new("Folder")
 	models.Name = "BrainrotModels"
 	models.Parent = Workspace
 
+	-- Flat base list (village, then city, then cloud) for InitBases.
+	local allBases = {}
+	for _, b in ipairs(villageBases) do
+		table.insert(allBases, b)
+	end
+	for _, b in ipairs(cityBases) do
+		table.insert(allBases, b)
+	end
+	for _, b in ipairs(cloudBases) do
+		table.insert(allBases, b)
+	end
+	for i, b in ipairs(allBases) do
+		b.index = i
+	end
+
 	return {
-		bases = bases,
+		bases = allBases,
 		spawnCFrame = CFrame.new(0, 2, 32),
+		worlds = {
+			Village = { spawnCFrame = CFrame.new(0, 2, 32), bases = villageBases },
+			City = { spawnCFrame = CFrame.new(800, 2, 22), bases = cityBases },
+			Cloud = { spawnCFrame = CFrame.new(-800, 262, 24), bases = cloudBases },
+		},
+		portals = {
+			cityVillage = villagePortal:WaitForChild("Disc"),
+			cityCity = cityPortal:WaitForChild("Disc"),
+			windVillage = plaza:WaitForChild("WindPad"):WaitForChild("Pad"),
+			windCity = city:WaitForChild("WindPad"):WaitForChild("Pad"),
+			cloudDrop = dropPad:WaitForChild("Pad"),
+		},
 		speedPrompt = speedPrompt,
 		carryPrompt = carryPrompt,
 		rebirthPrompt = rebirthPrompt,

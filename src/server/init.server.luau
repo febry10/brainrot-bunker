@@ -16,7 +16,7 @@ for _, name in ipairs({
 	"GameState", "Remotes", "WorldBuilder", "ConveyorService",
 	"EconomyService", "BaseService", "StealService", "WaveService",
 	"RebirthService", "FusionService", "QuestService", "DayNightService",
-	"GiantService", "DexService", "DataService",
+	"GiantService", "DexService", "DataService", "PortalService",
 }) do
 	local ok, result = pcall(function()
 		return require(script:WaitForChild(name))
@@ -43,6 +43,7 @@ local DayNightService = modules.DayNightService
 local GiantService = modules.GiantService
 local DexService = modules.DexService
 local DataService = modules.DataService
+local PortalService = modules.PortalService
 
 local function start(name, fn)
 	local ok, err = pcall(fn)
@@ -85,6 +86,11 @@ if world and GameState then
 			FusionService.Init(world)
 		end)
 	end
+	if PortalService then
+		start("PortalService", function()
+			PortalService.Start(world)
+		end)
+	end
 end
 
 if ConveyorService then
@@ -104,7 +110,7 @@ if StealService then
 end
 if WaveService and world then
 	start("WaveService", function()
-		WaveService.Start(world.spawnCFrame)
+		WaveService.Start(world)
 	end)
 end
 if QuestService then

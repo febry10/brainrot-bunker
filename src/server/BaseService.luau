@@ -24,41 +24,51 @@ function BaseService.WireBase(base)
 	base.world.floor.Touched:Connect(function(hit)
 		local player = playerFromHit(hit)
 		if player and base.owner == player then
-			EconomyService.TryPlace(player)
+			EconomyService.TryPlace(player, base)
 		end
 	end)
 	base.world.lockPad.Touched:Connect(function(hit)
 		local player = playerFromHit(hit)
 		if player and base.owner == player then
-			StealService.TryLock(player)
+			StealService.TryLock(player, base)
 		end
 	end)
 end
 
-function BaseService.AssignBase(player)
+-- Claim the first free plot in one world for the player (idempotent).
+-- The village claim also maintains data.baseIndex for the systems that
+-- still speak of "the" base (persistence restore, rebirth).
+function BaseService.AssignWorldBase(player, worldId)
 	local data = GameState.Get(player)
 	if not data then
 		return nil
 	end
+	local existing = data.worldBases[worldId]
+	if existing then
+		return GameState.GetBase(existing)
+	end
 	for _, base in ipairs(GameState.bases) do
-		if not base.owner then
+		if base.worldId == worldId and not base.owner then
 			base.owner = player
-			data.baseIndex = base.index
+			data.worldBases[worldId] = base.index
+			if worldId == "Village" then
+				data.baseIndex = base.index
+			end
 			base.world.ownerLabel.Text = player.Name .. "'s BASE"
 			base.world.statusLabel.Text = ""
 			return base
 		end
 	end
-	return nil -- all eight plots taken: the player spectates from the plaza
+	return nil -- every plot in this world is taken
+end
+
+function BaseService.AssignBase(player)
+	return BaseService.AssignWorldBase(player, "Village")
 end
 
 function BaseService.ReleaseBase(player)
 	local data = GameState.Get(player)
-	if not data or not data.baseIndex then
-		return
-	end
-	local base = GameState.GetBase(data.baseIndex)
-	if not base then
+	if not data then
 		return
 	end
 	-- Everything the player had out in the world goes away with them.
@@ -70,14 +80,21 @@ function BaseService.ReleaseBase(player)
 	end
 	data.carrying = {}
 	data.placed = {}
-	base.pads = {}
-	base.owner = nil
-	base.lockedUntil = 0
-	base.lockReadyAt = 0
-	base.world.ownerLabel.Text = "EMPTY BASE"
-	base.world.statusLabel.Text = ""
-	base.world.lockWall.Transparency = 1
-	base.world.lockWall.CanCollide = false
+	-- Release every claimed plot, in every world.
+	for _, index in pairs(data.worldBases) do
+		local base = GameState.GetBase(index)
+		if base and base.owner == player then
+			base.pads = {}
+			base.owner = nil
+			base.lockedUntil = 0
+			base.lockReadyAt = 0
+			base.world.ownerLabel.Text = "EMPTY BASE"
+			base.world.statusLabel.Text = ""
+			base.world.lockWall.Transparency = 1
+			base.world.lockWall.CanCollide = false
+		end
+	end
+	data.worldBases = {}
 	data.baseIndex = nil
 end
 

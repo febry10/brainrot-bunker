@@ -69,6 +69,9 @@ function FusionService.TryFuse(player)
 		return
 	end
 
+	-- The result goes back on the base the trio lived on.
+	local resultBase = best.consumed[1].baseIndex
+
 	-- Burn the trio: free their pads, drop the records and models.
 	for _, record in ipairs(best.consumed) do
 		local base = record.baseIndex and GameState.GetBase(record.baseIndex)
@@ -98,7 +101,7 @@ function FusionService.TryFuse(player)
 	data.stats.fusions += 1
 	data.dex[best.resultEntry.id] = true
 
-	if EconomyService.PlaceOnFreePad(player, record) then
+	if EconomyService.PlaceOnFreePad(player, record, resultBase) then
 		Remotes.Notify(player, "FUSION! 3x " .. best.entry.name .. " became " .. record.displayName .. "!")
 	else
 		-- Unreachable in practice (the trio freed three pads), but never

@@ -26,7 +26,10 @@ function EconomyService.SendState(player)
 	local questLine = ""
 	if data.quest then
 		local done = GameState.StatFor(data, data.quest.kind) - data.quest.baseline
-		questLine = "QUEST: " .. string.format(data.quest.label, data.quest.target)
+		local prefix = data.quest.chain
+			and string.format("QUEST %d/%d: ", data.quest.chain, #Config.QuestChain)
+			or "QUEST: "
+		questLine = prefix .. string.format(data.quest.label, data.quest.target)
 			.. " (" .. math.min(done, data.quest.target) .. "/" .. data.quest.target .. ")"
 			.. "  +$" .. data.quest.reward
 	end
@@ -60,10 +63,13 @@ function EconomyService.TryBuy(player, record)
 		return
 	end
 	data.money -= record.cost
-	GameState.RemoveFromList(GameState.conveyor, record)
+	GameState.RemoveFromList(GameState.conveyors[record.worldId or "Village"], record)
 	record.state = "Carried"
 	record.owner = player
 	data.stats.bought += 1
+	if Config.RarityRank[record.entry.rarity] >= 2 then
+		data.stats.boughtRare += 1
+	end
 	data.dex[record.entry.id] = true
 	table.insert(data.carrying, record)
 	if record.buyPrompt then
@@ -87,6 +93,10 @@ local function attachToPad(player, record, base, padIndex)
 	record.padIndex = padIndex
 	table.insert(data.placed, record)
 
+	if base.worldId == "City" then
+		data.stats.placedCity += 1
+	end
+
 	local pad = base.world.pads[padIndex]
 	record.model:PivotTo(CFrame.new(pad.pos) * CFrame.Angles(0, base.world.faceAngle, 0))
 
@@ -106,15 +116,21 @@ local function attachToPad(player, record, base, padIndex)
 	record.stealPrompt = prompt
 end
 
--- Place a record (built by the caller) on the first free pad of the
--- player's own base. Returns false when there is no base or no free pad.
-function EconomyService.PlaceOnFreePad(player, record)
+-- Place a record (built by the caller) on the first free pad of one of
+-- the player's bases: the explicit baseIndex when given, else the base
+-- in the world the player is currently in, else the village base.
+-- Returns false when there is no such base or no free pad.
+function EconomyService.PlaceOnFreePad(player, record, baseIndex)
 	local data = GameState.Get(player)
-	if not data or not data.baseIndex then
+	if not data then
 		return false
 	end
-	local base = GameState.GetBase(data.baseIndex)
-	if not base then
+	local index = baseIndex or data.worldBases[data.currentWorld] or data.baseIndex
+	if not index then
+		return false
+	end
+	local base = GameState.GetBase(index)
+	if not base or base.owner ~= player then
 		return false
 	end
 	for i = 1, 6 do
@@ -128,18 +144,23 @@ function EconomyService.PlaceOnFreePad(player, record)
 end
 
 -- Place the longest-carried brainrot on a free display pad of your base.
--- Called when you walk onto your own base floor.
-function EconomyService.TryPlace(player)
+-- Called when you walk onto your own base floor; the floor's base is
+-- passed in, otherwise the base in your current world is used.
+function EconomyService.TryPlace(player, touchedBase)
 	local data = GameState.Get(player)
-	if not data or #data.carrying == 0 or not data.baseIndex then
+	if not data or #data.carrying == 0 then
 		return
 	end
 	local now = os.clock()
 	if now - data.lastPlaceAt < 0.4 then
 		return
 	end
-	local base = GameState.GetBase(data.baseIndex)
-	if not base then
+	local base = touchedBase
+	if not base or base.owner ~= player then
+		local index = data.worldBases[data.currentWorld] or data.baseIndex
+		base = index and GameState.GetBase(index)
+	end
+	if not base or base.owner ~= player then
 		return
 	end
 	local padIndex = nil

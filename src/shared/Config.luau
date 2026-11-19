@@ -22,11 +22,32 @@ Config.WaveInterval = 100 -- seconds between tsunami warnings
 Config.WaveWarningTime = 5 -- countdown shown before the wave sweeps
 
 -- Conveyor ----------------------------------------------------------------
-Config.ConveyorCap = 10 -- max brainrots walking the lane at once
+Config.ConveyorCap = 10 -- max brainrots walking one lane at once
 Config.SpawnInterval = 2.5 -- seconds between spawn attempts
-Config.LaneMinX = -92 -- spawn end of the conveyor
-Config.LaneMaxX = 92 -- despawn end of the conveyor
-Config.LaneY = 0.6 -- top surface of the belt
+Config.LaneMinX = -92 -- spawn end of the village conveyor
+Config.LaneMaxX = 92 -- despawn end of the village conveyor
+Config.LaneY = 0.6 -- top surface of the belt, relative to the world origin
+Config.LaneHalfLength = 92 -- every world's lane runs origin.x +/- this
+
+-- Worlds --------------------------------------------------------------------
+-- Three zones in one place, far enough apart to never see each other.
+-- Each world has its own conveyor lane (origin.x +/- LaneHalfLength at
+-- origin.z, belt top at origin.y + LaneY) and its own base plots. The
+-- city and the cloud land are reached by portal and gated by lifetime
+-- progress (either condition unlocks).
+Config.Worlds = {
+	Village = { origin = Vector3.new(0, 0, 0) },
+	City = { origin = Vector3.new(800, 0, 0), unlockEarned = 25000, unlockRebirths = 1 },
+	Cloud = { origin = Vector3.new(-800, 260, 0), unlockEarned = 250000, unlockRebirths = 2 },
+}
+
+-- Per-world spawn weight multipliers by rarity: the city skews richer,
+-- the cloud land richer still (applied inside PickCast).
+Config.WorldWeights = {
+	Village = { Common = 1, Rare = 1, Epic = 1, Legendary = 1, Mythic = 1 },
+	City = { Common = 0.35, Rare = 1, Epic = 1.6, Legendary = 2, Mythic = 2.2 },
+	Cloud = { Common = 0.1, Rare = 0.5, Epic = 1.6, Legendary = 2.4, Mythic = 3 },
+}
 
 -- Upgrades ------------------------------------------------------------------
 Config.Upgrades = {
@@ -145,6 +166,26 @@ Config.Quests = {
 	{ kind = "survive", target = 2, reward = 600, label = "Survive %d tsunamis in a base" },
 }
 
+-- The structured quest chain every player follows FIRST (QuestService):
+-- eleven ordered steps touring the whole game, from the first buy to
+-- the cloud land. Kinds resolve through GameState.StatFor; steps with
+-- absolute = true measure the lifetime/snapshot value itself (baseline
+-- zero), the rest measure progress made after the step is issued. After
+-- step 11 the rotating pool above takes over.
+Config.QuestChain = {
+	{ kind = "buy", target = 1, reward = 100, label = "Buy your first brainrot" },
+	{ kind = "place", target = 1, reward = 100, label = "Place a brainrot on your base" },
+	{ kind = "earn", target = 500, reward = 150, label = "Earn $%d from your base" },
+	{ kind = "own", target = 3, reward = 250, label = "Own %d brainrots at once", absolute = true },
+	{ kind = "lock", target = 1, reward = 300, label = "Lock your base once" },
+	{ kind = "buyRare", target = 1, reward = 500, label = "Buy a Rare-or-better brainrot" },
+	{ kind = "fuse", target = 1, reward = 1500, label = "Fuse %d brainrot trio" },
+	{ kind = "earn", target = 25000, reward = 1000, label = "Reach $%d lifetime earned - the city portal opens!", absolute = true },
+	{ kind = "placeCity", target = 1, reward = 2000, label = "Place a brainrot in the city" },
+	{ kind = "rebirth", target = 1, reward = 2500, label = "Rebirth once", absolute = true },
+	{ kind = "visitCloud", target = 1, reward = 5000, label = "Visit the cloud land" },
+}
+
 -- Day / night cycle -------------------------------------------------------------
 Config.DayLengthSeconds = 240 -- one full 24h cycle
 Config.NightStartHour = 18.5 -- Lighting ClockTime hours that count as night
@@ -184,15 +225,23 @@ function Config.RarityColor(rarity)
 	return Config.RarityColors[rarity] or Color3.fromRGB(255, 255, 255)
 end
 
--- Weighted random cast entry (commons flood the lane, mythics are a event).
-function Config.PickCast(rng)
+-- Weighted random cast entry (commons flood the village lane, mythics are
+-- an event; other worlds skew the weights via Config.WorldWeights).
+function Config.PickCast(rng, worldId)
+	local weights = worldId and Config.WorldWeights[worldId]
+	local function weightOf(entry)
+		if weights then
+			return entry.weight * (weights[entry.rarity] or 1)
+		end
+		return entry.weight
+	end
 	local total = 0
 	for _, entry in ipairs(Config.Cast) do
-		total += entry.weight
+		total += weightOf(entry)
 	end
 	local roll = rng:NextNumber(0, total)
 	for _, entry in ipairs(Config.Cast) do
-		roll -= entry.weight
+		roll -= weightOf(entry)
 		if roll <= 0 then
 			return entry
 		end

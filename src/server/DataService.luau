@@ -79,7 +79,12 @@ local function snapshot(player)
 	end
 	local placed = {}
 	for _, record in ipairs(data.placed) do
-		table.insert(placed, { id = record.entry.id, mutation = record.mutation })
+		local base = record.baseIndex and GameState.GetBase(record.baseIndex)
+		table.insert(placed, {
+			id = record.entry.id,
+			mutation = record.mutation,
+			world = (base and base.worldId) or "Village",
+		})
 	end
 	local dex = {}
 	for id in pairs(data.dex) do
@@ -89,6 +94,7 @@ local function snapshot(player)
 		version = 1,
 		money = math.floor(data.money),
 		rebirths = data.rebirths,
+		chainStep = data.chainStep,
 		speedStacks = data.speedStacks,
 		carryCapacity = data.carryCapacity,
 		dex = dex,
@@ -145,6 +151,9 @@ function DataService.LoadAndRestore(player)
 	if type(saved.rebirths) == "number" then
 		data.rebirths = math.max(0, math.floor(saved.rebirths))
 	end
+	if type(saved.chainStep) == "number" then
+		data.chainStep = math.clamp(math.floor(saved.chainStep), 1, #Config.QuestChain + 1)
+	end
 	if type(saved.speedStacks) == "number" then
 		data.speedStacks = math.clamp(math.floor(saved.speedStacks), 0, Config.Upgrades.Speed.maxStacks)
 		data.speedBonus = data.speedStacks * Config.Upgrades.Speed.amount
@@ -176,40 +185,96 @@ function DataService.LoadAndRestore(player)
 	GameState.SyncLeaderstats(player)
 	GameState.ApplyWalkSpeed(player)
 
-	-- Rebuild the placed brainrots on the base the player was assigned.
-	if type(saved.placed) == "table" and data.baseIndex then
+	-- Rebuild the placed brainrots, world by world: the village base is
+	-- already claimed at join, so village brainrots come back at once.
+	-- Brainrots that lived in another world wait in pendingRestore until
+	-- the player next claims a base there (see RestoreWorld).
+	if type(saved.placed) == "table" then
+		local byWorld = {}
 		for _, item in ipairs(saved.placed) do
-			if #data.placed >= 6 then
-				break
+			if type(item) == "table" then
+				local worldId = type(item.world) == "string" and item.world or "Village"
+				byWorld[worldId] = byWorld[worldId] or {}
+				table.insert(byWorld[worldId], item)
 			end
-			local entry = type(item) == "table" and Config.GetEntry(item.id) or nil
-			if entry then
-				local mutation = item.mutation
-				if mutation ~= "Gold" and mutation ~= "Rainbow" then
-					mutation = "None"
-				end
-				local model, visuals = CharacterFactory.Build(entry, mutation)
-				local record = {
-					entry = entry,
-					mutation = mutation,
-					displayName = Config.DisplayName(entry, mutation),
-					income = Config.IncomeFor(entry, mutation),
-					cost = Config.CostFor(entry, mutation),
-					model = model,
-					bodyPart = visuals.body,
-					headPart = visuals.head,
-					state = "Placed",
-					owner = player,
-				}
-				GameState.RegisterBrainrot(record)
-				model.Parent = Workspace:WaitForChild("BrainrotModels")
-				data.dex[entry.id] = true
-				if not EconomyService.PlaceOnFreePad(player, record) then
-					GameState.DestroyBrainrot(record)
-				end
+		end
+		for worldId, items in pairs(byWorld) do
+			if worldId == "Village" then
+				DataService.RestoreItems(player, items, data.baseIndex)
+			else
+				data.pendingRestore[worldId] = items
 			end
 		end
 	end
+	EconomyService.SendState(player)
+end
+
+-- Rebuild saved {cast id, mutation} items onto one specific base.
+function DataService.RestoreItems(player, items, baseIndex)
+	local data = GameState.Get(player)
+	if not data or not baseIndex or type(items) ~= "table" then
+		return
+	end
+	for _, item in ipairs(items) do
+		local base = GameState.GetBase(baseIndex)
+		if not base then
+			return
+		end
+		local used = 0
+		for i = 1, 6 do
+			if base.pads[i] then
+				used += 1
+			end
+		end
+		if used >= 6 then
+			break
+		end
+		local entry = type(item) == "table" and Config.GetEntry(item.id) or nil
+		if entry then
+			local mutation = item.mutation
+			if mutation ~= "Gold" and mutation ~= "Rainbow" then
+				mutation = "None"
+			end
+			local model, visuals = CharacterFactory.Build(entry, mutation)
+			local record = {
+				entry = entry,
+				mutation = mutation,
+				displayName = Config.DisplayName(entry, mutation),
+				income = Config.IncomeFor(entry, mutation),
+				cost = Config.CostFor(entry, mutation),
+				model = model,
+				bodyPart = visuals.body,
+				headPart = visuals.head,
+				state = "Placed",
+				owner = player,
+			}
+			GameState.RegisterBrainrot(record)
+			model.Parent = Workspace:WaitForChild("BrainrotModels")
+			data.dex[entry.id] = true
+			if not EconomyService.PlaceOnFreePad(player, record, baseIndex) then
+				GameState.DestroyBrainrot(record)
+			end
+		end
+	end
+end
+
+-- Called when the player claims a base in a world that still has saved
+-- brainrots waiting (PortalService calls this on arrival).
+function DataService.RestoreWorld(player, worldId)
+	local data = GameState.Get(player)
+	if not data then
+		return
+	end
+	local items = data.pendingRestore[worldId]
+	if not items then
+		return
+	end
+	local baseIndex = data.worldBases[worldId]
+	if not baseIndex then
+		return
+	end
+	data.pendingRestore[worldId] = nil
+	DataService.RestoreItems(player, items, baseIndex)
 	EconomyService.SendState(player)
 end
 

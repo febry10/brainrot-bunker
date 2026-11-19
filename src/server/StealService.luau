@@ -67,13 +67,20 @@ function StealService.TrySteal(player, record)
 	end
 end
 
-function StealService.TryLock(player)
+-- Lock one of the player's bases: the one whose lock pad was touched
+-- when a base is passed in, otherwise the base in the world the player
+-- is currently in (HUD button / L key).
+function StealService.TryLock(player, touchedBase)
 	local data = GameState.Get(player)
-	if not data or not data.baseIndex then
+	if not data then
 		return
 	end
-	local base = GameState.GetBase(data.baseIndex)
-	if not base then
+	local base = touchedBase
+	if not base or base.owner ~= player then
+		local index = data.worldBases[data.currentWorld] or data.baseIndex
+		base = index and GameState.GetBase(index)
+	end
+	if not base or base.owner ~= player then
 		return
 	end
 	local now = os.clock()
@@ -90,6 +97,7 @@ function StealService.TryLock(player)
 	base.world.lockWall.Transparency = 0.45
 	base.world.lockWall.CanCollide = true
 	setStealPromptsEnabled(base, false)
+	data.stats.locks += 1
 	Remotes.Notify(player, "Base LOCKED for " .. Config.LockDuration .. "s!")
 end
 

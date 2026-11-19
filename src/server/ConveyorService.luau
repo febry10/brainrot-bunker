@@ -1,8 +1,10 @@
 -- ConveyorService.luau (server ModuleScript)
--- Owns the conveyor lane: spawns brainrots at the west portal on a weighted
--- rarity roll (with mutation rolls), walks them east with a bob, despawns
--- them at the far end, and cycles Rainbow mutations through the spectrum.
--- Buying is EconomyService's job; this service only attaches the prompt.
+-- Owns the conveyor lanes - one per world (village, city, cloud land).
+-- Each lane spawns brainrots at its west portal on a weighted rarity roll
+-- (skewed per world via Config.WorldWeights, with mutation rolls), walks
+-- them east with a bob, and despawns them at the far end. Rainbow
+-- mutations cycle through the spectrum. Buying is EconomyService's job;
+-- this service only attaches the prompt.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -17,11 +19,31 @@ local ConveyorService = {}
 
 local rng = Random.new()
 
-local function spawnBrainrot()
-	local entry = Config.PickCast(rng)
+-- Lane descriptors, built once from Config.Worlds: absolute coordinates,
+-- so a record only needs its lane reference to know how to walk.
+local lanes = {}
+for worldId, world in pairs(Config.Worlds) do
+	table.insert(lanes, {
+		worldId = worldId,
+		minX = world.origin.X - Config.LaneHalfLength,
+		maxX = world.origin.X + Config.LaneHalfLength,
+		y = world.origin.Y + Config.LaneY,
+		z = world.origin.Z,
+		list = GameState.conveyors[worldId],
+	})
+end
+
+local function spawnBrainrot(lane)
+	local entry = Config.PickCast(rng, lane.worldId)
 	local mutation = Config.RollMutation(entry.rarity, rng,
 		GameState.isNight and Config.NightMutationMul or 1)
 	local model, visuals = CharacterFactory.Build(entry, mutation)
+	if lane.worldId == "Cloud" then
+		-- Sky sparkle tint for cloud-land spawns.
+		local sparkles = Instance.new("Sparkles")
+		sparkles.SparkleColor = Color3.fromRGB(255, 240, 190)
+		sparkles.Parent = visuals.body
+	end
 
 	local record = {
 		entry = entry,
@@ -34,15 +56,17 @@ local function spawnBrainrot()
 		headPart = visuals.head,
 		state = "Conveyor",
 		owner = nil,
-		x = Config.LaneMinX,
+		worldId = lane.worldId,
+		lane = lane,
+		x = lane.minX,
 		bobPhase = rng:NextNumber(0, 6),
 		spinPhase = 0,
 		hue = rng:NextNumber(),
 	}
 	GameState.RegisterBrainrot(record)
-	table.insert(GameState.conveyor, record)
+	table.insert(lane.list, record)
 
-	model:PivotTo(CFrame.new(record.x, Config.LaneY, 0))
+	model:PivotTo(CFrame.new(record.x, lane.y, lane.z))
 	model.Parent = Workspace:WaitForChild("BrainrotModels")
 
 	local prompt = Instance.new("ProximityPrompt")
@@ -59,32 +83,36 @@ local function spawnBrainrot()
 end
 
 function ConveyorService.Start()
-	-- Spawn loop.
+	-- Spawn loop: every lane tops itself up independently.
 	task.spawn(function()
 		while true do
 			task.wait(Config.SpawnInterval)
-			if #GameState.conveyor < Config.ConveyorCap then
-				spawnBrainrot()
+			for _, lane in ipairs(lanes) do
+				if #lane.list < Config.ConveyorCap then
+					spawnBrainrot(lane)
+				end
 			end
 		end
 	end)
 
-	-- Walk loop.
+	-- Walk loop: every lane's records stroll east along their own lane.
 	RunService.Heartbeat:Connect(function(dt)
 		local t = os.clock()
-		for i = #GameState.conveyor, 1, -1 do
-			local record = GameState.conveyor[i]
-			record.x += (record.speed or record.entry.speed) * dt
-			record.bobPhase += dt * 7
-			if record.x >= Config.LaneMaxX then
-				table.remove(GameState.conveyor, i)
-				GameState.DestroyBrainrot(record)
-			else
-				local bob = math.abs(math.sin(record.bobPhase)) * 0.28
-				record.model:PivotTo(CFrame.new(record.x, Config.LaneY + bob, 0))
-				if record.mutation == "Rainbow" then
-					local color = Color3.fromHSV((t * 0.25 + record.hue) % 1, 0.65, 1)
-					record.bodyPart.Color = color
+		for _, lane in ipairs(lanes) do
+			for i = #lane.list, 1, -1 do
+				local record = lane.list[i]
+				record.x += (record.speed or record.entry.speed) * dt
+				record.bobPhase += dt * 7
+				if record.x >= lane.maxX then
+					table.remove(lane.list, i)
+					GameState.DestroyBrainrot(record)
+				else
+					local bob = math.abs(math.sin(record.bobPhase)) * 0.28
+					record.model:PivotTo(CFrame.new(record.x, lane.y + bob, lane.z))
+					if record.mutation == "Rainbow" then
+						local color = Color3.fromHSV((t * 0.25 + record.hue) % 1, 0.65, 1)
+						record.bodyPart.Color = color
+					end
 				end
 			end
 		end

@@ -61,15 +61,16 @@ function RebirthService.TryRebirth(player)
 		Remotes.Notify(player, "Rebirth needs $" .. Config.RebirthCost .. " (you have $" .. math.floor(data.money) .. ")")
 		return
 	end
-	-- Burn the placed brainrots and the money; keep carried ones in hand.
-	local base = data.baseIndex and GameState.GetBase(data.baseIndex)
+	-- Burn the placed brainrots (in every world) and the money; keep
+	-- carried ones in hand. Each record frees its own pad.
 	for _, record in ipairs(data.placed) do
+		local base = record.baseIndex and GameState.GetBase(record.baseIndex)
+		if base and record.padIndex then
+			base.pads[record.padIndex] = nil
+		end
 		GameState.DestroyBrainrot(record)
 	end
 	data.placed = {}
-	if base then
-		base.pads = {}
-	end
 	data.money = Config.StartMoney
 	data.rebirths += 1
 	GameState.SyncLeaderstats(player)

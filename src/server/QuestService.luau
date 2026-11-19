@@ -1,11 +1,18 @@
 -- QuestService.luau (server ModuleScript)
--- Every player always has one active quest from the Config.Quests pool.
--- Progress is not tracked here at all: each quest kind maps to a lifetime
--- counter in GameState (incremented by the systems that own the actions -
--- EconomyService buys/places/earns, FusionService fuses, WaveService
--- survivals), and a quest completes when the counter has moved past the
--- baseline captured when the quest was issued. Completion pays the money
--- reward and immediately issues the next quest.
+-- Every player always has one active quest. New players first follow
+-- the structured QUEST CHAIN (Config.QuestChain): eleven ordered steps
+-- that tour the whole game -- buy, place, earn, own, lock, buy rare,
+-- fuse, reach the city unlock, place in the city, rebirth, visit the
+-- clouds. Once the chain is finished, quests roll from the rotating
+-- pool (Config.Quests) forever.
+--
+-- Progress is not tracked here at all: each quest kind maps to a
+-- counter read by GameState.StatFor (incremented by the systems that
+-- own the actions), and a quest completes when the counter has moved
+-- past the baseline captured when the quest was issued -- chain steps
+-- flagged absolute instead measure the counter itself (baseline zero).
+-- Completion pays the money reward and immediately issues the next
+-- quest; the chain step persists via DataService.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -18,7 +25,7 @@ local QuestService = {}
 
 local rng = Random.new()
 
-local function assignQuest(data)
+local function assignPoolQuest(data)
 	local pool = Config.Quests
 	local pick = pool[rng:NextInteger(1, #pool)]
 	if data.quest and #pool > 1 then
@@ -37,6 +44,24 @@ local function assignQuest(data)
 	}
 end
 
+-- The next objective: the current chain step while the chain lasts, a
+-- pool quest afterwards.
+local function assignQuest(data)
+	if data.chainStep <= #Config.QuestChain then
+		local step = Config.QuestChain[data.chainStep]
+		data.quest = {
+			kind = step.kind,
+			target = step.target,
+			reward = step.reward,
+			label = step.label,
+			chain = data.chainStep,
+			baseline = step.absolute and 0 or GameState.StatFor(data, step.kind),
+		}
+	else
+		assignPoolQuest(data)
+	end
+end
+
 function QuestService.Start()
 	task.spawn(function()
 		while true do
@@ -46,10 +71,18 @@ function QuestService.Start()
 					assignQuest(data)
 					EconomyService.SendState(player)
 				elseif GameState.StatFor(data, data.quest.kind) - data.quest.baseline >= data.quest.target then
-					local reward = data.quest.reward
+					local quest = data.quest
+					local reward = quest.reward
 					data.money += reward
 					GameState.SyncLeaderstats(player)
-					Remotes.Notify(player, "QUEST COMPLETE! +$" .. reward)
+					if quest.chain then
+						Remotes.Notify(player, string.format(
+							"QUEST %d/%d COMPLETE! +$%d", quest.chain, #Config.QuestChain, reward))
+						data.chainStep += 1
+					else
+						Remotes.Notify(player, "QUEST COMPLETE! +$" .. reward)
+					end
+					data.quest = nil
 					assignQuest(data)
 					EconomyService.SendState(player)
 				end

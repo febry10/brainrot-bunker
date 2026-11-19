@@ -1,12 +1,17 @@
 -- Hud.luau (client ModuleScript)
--- The ScreenGui: money + income in a width-capped bar at the top centre
--- (kept clear of Roblox's own top-left menu), the cast & price list on the
--- right with the action buttons in their own frame directly below it (the
--- two never overlap), a notify line, and the big tsunami countdown banner.
--- It only displays what the server sends and forwards button presses.
+-- The ScreenGui, designed mobile-first: exactly five top-level elements -
+-- TopBar, CastPanel, ButtonsFrame, WaveBanner, Notify. The TopBar is
+-- compact and width-capped at the top centre (clear of Roblox's top-left
+-- menu); the cast & price list lives in a TOGGLEABLE panel on the right
+-- (the CAST button in ButtonsFrame opens/closes it, and it starts closed
+-- on narrow viewports); the action buttons sit in their own frame below
+-- the panel's spot so they can never cover the price rows. A UIScale
+-- shrinks the whole HUD proportionally on small screens. The HUD only
+-- displays what the server sends and forwards button presses.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
 
@@ -43,10 +48,11 @@ end
 local function makeButton(parent, name, text, color)
 	local button = Instance.new("TextButton")
 	button.Name = name
-	button.Size = UDim2.new(1, 0, 0, 44)
+	button.Size = UDim2.new(1, 0, 0, 40)
 	button.BackgroundColor3 = color
+	button.BackgroundTransparency = 0.15
 	button.Text = text
-	button.TextSize = 17
+	button.TextSize = 15
 	button.TextColor3 = Color3.fromRGB(255, 255, 255)
 	button.TextStrokeTransparency = 0.5
 	button.Font = Enum.Font.GothamBlack
@@ -79,18 +85,35 @@ function Hud.Start(player, remotes)
 	gui.DisplayOrder = 10
 	gui.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets
 
-	-- Top centre: title, money, income, rebirths, carrying, next target.
+	-- Proportional shrink on small screens: the whole HUD scales with the
+	-- viewport (never below 0.62, never above 1), so a phone keeps the
+	-- same layout relationships as a desktop monitor.
+	local uiScale = Instance.new("UIScale")
+	uiScale.Parent = gui
+	local camera = Workspace.CurrentCamera
+	local function updateScale()
+		if not camera then
+			return
+		end
+		local vs = camera.ViewportSize
+		uiScale.Scale = math.clamp(math.min(vs.X / 1280, vs.Y / 720), 0.62, 1)
+	end
+	if camera then
+		camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateScale)
+	end
+	updateScale()
+
+	-- Top centre, compact: title, money, income, carrying+next on one
+	-- slim line, quest. Width follows the screen (44%) capped at 560px so
+	-- it can never stretch into the right-hand column.
 	local top = Instance.new("Frame")
 	top.Name = "TopBar"
 	top.AnchorPoint = Vector2.new(0.5, 0)
 	top.Position = UDim2.new(0.5, 0, 0, 8)
-	-- Width follows the screen (44%) but is capped at 560px, so the bar can
-	-- never stretch into the right-hand column; height is fixed and the bar
-	-- only ever extends downward from the top edge.
-	top.Size = UDim2.new(0.44, 0, 0, 176)
+	top.Size = UDim2.new(0.44, 0, 0, 120)
 	local topConstraint = Instance.new("UISizeConstraint")
-	topConstraint.MinSize = Vector2.new(280, 176)
-	topConstraint.MaxSize = Vector2.new(560, 176)
+	topConstraint.MinSize = Vector2.new(300, 120)
+	topConstraint.MaxSize = Vector2.new(560, 120)
 	topConstraint.Parent = top
 	top.BackgroundColor3 = Color3.fromRGB(25, 20, 45)
 	top.BackgroundTransparency = 0.25
@@ -101,30 +124,30 @@ function Hud.Start(player, remotes)
 	panelStroke(top, Color3.fromRGB(255, 210, 90))
 	top.Parent = gui
 
-	makeLabel(top, "Title", UDim2.new(1, 0, 0, 26), UDim2.new(0, 0, 0, 2), nil,
-		"BRAINROT BUNKER", 20, Color3.fromRGB(255, 210, 90), Enum.Font.GothamBlack)
-	local moneyLabel = makeLabel(top, "Money", UDim2.new(1, 0, 0, 44), UDim2.new(0, 0, 0, 26), nil,
-		"$" .. commafy(Config.StartMoney), 40, Color3.fromRGB(140, 255, 140), Enum.Font.GothamBlack)
+	makeLabel(top, "Title", UDim2.new(1, 0, 0, 22), UDim2.new(0, 0, 0, 0), nil,
+		"BRAINROT BUNKER", 17, Color3.fromRGB(255, 210, 90), Enum.Font.GothamBlack)
+	local moneyLabel = makeLabel(top, "Money", UDim2.new(1, 0, 0, 36), UDim2.new(0, 0, 0, 22), nil,
+		"$" .. commafy(Config.StartMoney), 32, Color3.fromRGB(140, 255, 140), Enum.Font.GothamBlack)
 	local moneyScale = Instance.new("UIScale")
 	moneyScale.Parent = moneyLabel
-	local incomeLabel = makeLabel(top, "Income", UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0, 72), nil,
-		"+$0/s", 19, Color3.fromRGB(160, 230, 255))
-	local carryLabel = makeLabel(top, "Carrying", UDim2.new(1, 0, 0, 22), UDim2.new(0, 0, 0, 98), nil,
-		"Hands empty - buy a brainrot!", 15, Color3.fromRGB(255, 190, 220))
-	local nextLabel = makeLabel(top, "Next", UDim2.new(1, 0, 0, 22), UDim2.new(0, 0, 0, 122), nil,
-		"", 14, Color3.fromRGB(255, 255, 255))
-	local questLabel = makeLabel(top, "Quest", UDim2.new(1, 0, 0, 22), UDim2.new(0, 0, 0, 146), nil,
-		"", 14, Color3.fromRGB(255, 220, 120))
-	local dayLabel = makeLabel(top, "DayPhase", UDim2.new(0, 170, 0, 22), UDim2.new(1, -8, 0, 4), Vector2.new(1, 0),
-		"DAY", 13, Color3.fromRGB(160, 230, 255))
+	local incomeLabel = makeLabel(top, "Income", UDim2.new(1, 0, 0, 20), UDim2.new(0, 0, 0, 58), nil,
+		"+$0/s", 15, Color3.fromRGB(160, 230, 255))
+	local carryNextLabel = makeLabel(top, "CarryNext", UDim2.new(1, 0, 0, 18), UDim2.new(0, 0, 0, 80), nil,
+		"Hands empty - buy a brainrot!", 13, Color3.fromRGB(255, 190, 220))
+	local questLabel = makeLabel(top, "Quest", UDim2.new(1, 0, 0, 18), UDim2.new(0, 0, 0, 100), nil,
+		"", 13, Color3.fromRGB(255, 220, 120))
+	local dayLabel = makeLabel(top, "DayPhase", UDim2.new(0, 170, 0, 18), UDim2.new(1, -8, 0, 2), Vector2.new(1, 0),
+		"DAY", 12, Color3.fromRGB(160, 230, 255))
 	dayLabel.TextXAlignment = Enum.TextXAlignment.Right
 	-- Floating "+$X" gain popup over the money line (income feedback).
-	local gainLabel = makeLabel(top, "Gain", UDim2.new(0, 200, 0, 30), UDim2.new(1, -16, 0, 34), Vector2.new(1, 0),
-		"", 22, Color3.fromRGB(170, 255, 170), Enum.Font.GothamBlack)
+	local gainLabel = makeLabel(top, "Gain", UDim2.new(0, 170, 0, 26), UDim2.new(1, -10, 0, 28), Vector2.new(1, 0),
+		"", 20, Color3.fromRGB(170, 255, 170), Enum.Font.GothamBlack)
 	gainLabel.TextXAlignment = Enum.TextXAlignment.Right
 	gainLabel.Visible = false
 
-	-- Top right: the cast & price list.
+	-- Top right: the cast & price list, toggleable (see the CAST button
+	-- in ButtonsFrame below). Starts closed on narrow viewports so it
+	-- never eats a phone screen; open on wide ones.
 	local panel = Instance.new("Frame")
 	panel.Name = "CastPanel"
 	panel.AnchorPoint = Vector2.new(1, 0)
@@ -134,6 +157,7 @@ function Hud.Start(player, remotes)
 	panel.BackgroundTransparency = 0.25
 	panel.BorderSizePixel = 0
 	panel.ClipsDescendants = true
+	panel.Visible = not camera or camera.ViewportSize.X >= 900
 	local panelCorner = Instance.new("UICorner")
 	panelCorner.CornerRadius = UDim.new(0, 14)
 	panelCorner.Parent = panel
@@ -178,19 +202,30 @@ function Hud.Start(player, remotes)
 		row.Parent = scroll
 	end
 
-	-- Right column, directly below the cast panel: the action buttons in
-	-- their own frame, so they can never cover the price list rows.
+	-- Right column, directly below the cast panel's spot: the CAST toggle
+	-- plus the action buttons in their own frame, so they can never cover
+	-- the price list rows.
 	local buttons = Instance.new("Frame")
-	buttons.Name = "Buttons"
+	buttons.Name = "ButtonsFrame"
 	buttons.AnchorPoint = Vector2.new(1, 0)
 	buttons.Position = UDim2.new(1, -10, 0, 314)
-	buttons.Size = UDim2.fromOffset(252, 244)
+	buttons.Size = UDim2.fromOffset(200, 270)
 	buttons.BackgroundTransparency = 1
 	local buttonLayout = Instance.new("UIListLayout")
 	buttonLayout.FillDirection = Enum.FillDirection.Vertical
 	buttonLayout.Padding = UDim.new(0, 6)
 	buttonLayout.Parent = buttons
 	buttons.Parent = gui
+
+	local castToggle = makeButton(buttons, "CastToggle", "SHOW CAST", Color3.fromRGB(90, 90, 120))
+	local function syncCastToggle()
+		castToggle.Text = panel.Visible and "HIDE CAST" or "SHOW CAST"
+	end
+	syncCastToggle()
+	castToggle.MouseButton1Click:Connect(function()
+		panel.Visible = not panel.Visible
+		syncCastToggle()
+	end)
 
 	local lockButton = makeButton(buttons, "LockButton", "LOCK BASE (L)", Color3.fromRGB(60, 160, 90))
 	local rebirthButton = makeButton(buttons, "RebirthButton", "REBIRTH (R)", Color3.fromRGB(150, 70, 220))
@@ -247,14 +282,15 @@ function Hud.Start(player, remotes)
 			dayLabel.Text = "DAY"
 			dayLabel.TextColor3 = Color3.fromRGB(160, 230, 255)
 		end
-		if state.carrying > 0 then
-			carryLabel.Text = "Carrying " .. state.carrying .. "/" .. state.capacity .. ": " .. state.carryName
-		else
-			carryLabel.Text = "Hands empty - buy a brainrot!"
-		end
 
-		-- Next brainrot to afford: the cheapest cast member above the
-		-- player's money, as a progress hint in that rarity's color.
+		-- One slim line: what you carry, then the next brainrot to afford
+		-- (the cheapest cast member above your money, in its rarity color).
+		local carryText
+		if state.carrying > 0 then
+			carryText = "Carrying " .. state.carrying .. "/" .. state.capacity .. ": " .. state.carryName
+		else
+			carryText = "Hands empty - buy a brainrot!"
+		end
 		local nextEntry = nil
 		for _, entry in ipairs(Config.Cast) do
 			if entry.cost > state.money and (nextEntry == nil or entry.cost < nextEntry.cost) then
@@ -262,12 +298,12 @@ function Hud.Start(player, remotes)
 			end
 		end
 		if nextEntry then
-			nextLabel.Text = "NEXT: " .. nextEntry.name .. "  $" .. commafy(nextEntry.cost)
+			carryNextLabel.Text = carryText .. "   |   NEXT: " .. nextEntry.name .. "  $" .. commafy(nextEntry.cost)
 				.. "  (need $" .. commafy(nextEntry.cost - state.money) .. " more)"
-			nextLabel.TextColor3 = Config.RarityColor(nextEntry.rarity)
+			carryNextLabel.TextColor3 = Config.RarityColor(nextEntry.rarity)
 		else
-			nextLabel.Text = "NEXT: You can afford them all - go Mythic hunting!"
-			nextLabel.TextColor3 = Color3.fromRGB(255, 210, 90)
+			carryNextLabel.Text = carryText .. "   |   NEXT: You can afford them all - go Mythic hunting!"
+			carryNextLabel.TextColor3 = Color3.fromRGB(255, 210, 90)
 		end
 
 		-- Income feedback: when money rises, pop a floating "+$X" over the
@@ -281,12 +317,12 @@ function Hud.Start(player, remotes)
 				pulseTween:Cancel()
 			end
 			gainLabel.Text = "+$" .. commafy(delta)
-			gainLabel.Position = UDim2.new(1, -16, 0, 40)
+			gainLabel.Position = UDim2.new(1, -10, 0, 32)
 			gainLabel.TextTransparency = 0
 			gainLabel.TextStrokeTransparency = 0.4
 			gainLabel.Visible = true
 			gainTween = TweenService:Create(gainLabel, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-				Position = UDim2.new(1, -16, 0, 8),
+				Position = UDim2.new(1, -10, 0, 6),
 				TextTransparency = 1,
 				TextStrokeTransparency = 1,
 			})
